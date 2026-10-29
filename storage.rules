@@ -1,0 +1,18 @@
+rules_version = '2';
+// Photos: only vault accounts can upload or delete; images only, max 20 MB each.
+// Keep the email list identical to firestore.rules.
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isVaultUser() {
+      return request.auth != null
+        && request.auth.token.email in ['owner1@example.com', 'owner2@example.com'];
+    }
+    match /photos/{file} {
+      allow read: if isVaultUser();
+      allow create, update: if isVaultUser()
+        && request.resource.size < 20 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow delete: if isVaultUser();
+    }
+  }
+}

@@ -1,0 +1,14 @@
+rules_version = '2';
+// Only the vault accounts listed below can read or write anything.
+// Replace the two emails with the accounts you create in Firebase → Authentication → Users.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isVaultUser() {
+      return request.auth != null
+        && request.auth.token.email in ['owner1@example.com', 'owner2@example.com'];
+    }
+    match /{document=**} {
+      allow read, write: if isVaultUser();
+    }
+  }
+}

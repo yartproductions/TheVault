@@ -1,0 +1,1360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Obsidian Vault</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<script src="config.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0B0E0D;--side:#0C100F;--card:#111615;--card2:#0F1413;--line:#1F2925;--line2:#26312C;--soft:#18201D;
+  --tx:#E8EEEA;--tx2:#DCE5E0;--mut:#9AA9A2;--mut2:#8C9C95;
+  --em:#3DDC97;--em2:#5FE6AC;--emd:#0F2A1F;--blue:#8EC3FF;--blued:#13243A;--amb:#F2C063;--ambd:#2B2312;
+  --lil:#CDB4F5;--lild:#231A2E;--cor:#F2A08A;--cord:#2E1B16;--teal:#7FD6E8;--teald:#10262B;--gry:#C9CCD6;--gryd:#1E2026;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--tx);font-family:'Inter Tight',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--em);text-decoration:none}a:hover{color:#8BF0C4}
+button{font-family:inherit}
+::selection{background:#3DDC9740}
+:focus-visible{outline:2px solid var(--em);outline-offset:2px}
+html,*{scrollbar-width:thin;scrollbar-color:#2A3A33 transparent}
+*::-webkit-scrollbar{width:10px;height:10px}*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:#24302B;border-radius:999px;border:3px solid transparent;background-clip:padding-box}
+*::-webkit-scrollbar-thumb:hover{background:var(--em);border:3px solid transparent;background-clip:padding-box}
+*::-webkit-scrollbar-corner{background:transparent}*::-webkit-scrollbar-button{display:none;width:0;height:0}
+.mono{font-family:'JetBrains Mono',monospace;font-feature-settings:"tnum" 1,"zero" 1}
+.mut{color:var(--mut)}.mut2{color:var(--mut2)}.em{color:var(--em2)}.cor{color:var(--cor)}.amb{color:var(--amb)}
+.sm{font-size:12px}.r{text-align:right}
+
+/* shell */
+.shell{display:flex;flex-wrap:wrap;min-height:100vh}
+.side{flex:1 1 240px;max-width:100%;background:linear-gradient(180deg,#0E1312,#0A0D0C);box-shadow:1px 0 0 #1A2320,24px 0 48px -32px #000;padding:24px 16px;display:flex;flex-direction:column;gap:24px}
+.main{flex:999 1 560px;min-width:0;padding:32px 40px 64px;display:flex;flex-direction:column;gap:22px;background-image:radial-gradient(#ffffff08 1px,transparent 1px);background-size:22px 22px}
+.brand{display:flex;align-items:center;gap:12px;padding:0 8px;font-size:15px;font-weight:600;letter-spacing:-.3px}
+.gem{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:radial-gradient(circle at 30% 25%,#1E3A2E,#101A16);box-shadow:0 0 0 1px #2A4A3B,0 8px 24px -8px #3DDC9780,inset 0 1px 0 #ffffff1a;flex-shrink:0}
+.nav{display:flex;flex-direction:column;gap:4px}
+.nav a{position:relative;display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;color:var(--mut);font-size:14px;font-weight:500;transition:background .15s,color .15s}
+.nav a svg{opacity:.8}.nav a:hover{background:#151B19;color:var(--tx)}
+.nav a.on{background:linear-gradient(90deg,#163127,#121C18 75%);box-shadow:inset 0 0 0 1px #24402F;color:var(--tx)}
+.nav a.on::before{content:"";position:absolute;left:-16px;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:var(--em);box-shadow:0 0 14px var(--em)}
+.nav a.on svg{color:var(--em);opacity:1}
+.who{border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;align-items:center;gap:12px;background:#101514}
+.sync{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mut2);padding:0 8px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--em);box-shadow:0 0 8px var(--em);flex-shrink:0}
+.dot.warn{background:var(--amb);box-shadow:0 0 8px var(--amb)}.dot.bad{background:var(--cor);box-shadow:0 0 8px var(--cor)}
+.av{border-radius:50%;display:grid;place-items:center;font-weight:600;flex-shrink:0}
+
+/* building blocks */
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.head h1{margin:6px 0 0;font-size:32px;font-weight:600;letter-spacing:-1px;text-wrap:balance}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:1.8px;color:var(--em)}
+.acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.card{background:linear-gradient(180deg,#131918,#101514);border:1px solid var(--line);border-radius:16px;box-shadow:inset 0 1px 0 #ffffff0b,0 1px 0 #00000066,0 22px 44px -26px #000000d9}
+.pad{padding:22px}.pad-s{padding:16px 18px}
+.card h2,.h2{margin:0;font-size:16px;font-weight:600}
+.glow{background:linear-gradient(160deg,#12281F,#0D1A15);border:1px solid #1D3A2C;border-radius:14px;box-shadow:inset 0 1px 0 #ffffff10,0 18px 40px -22px #3DDC9766}
+.grid{display:grid;gap:16px}.g-auto{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.span2{grid-column:span 2}.span3{grid-column:span 3}.spanall{grid-column:1/-1}
+.cols{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+.col-main{flex:999 1 520px;min-width:0;display:flex;flex-direction:column;gap:20px}
+.col-side{flex:1 1 320px;min-width:0;display:flex;flex-direction:column;gap:20px}
+.kpi{padding:20px;display:flex;flex-direction:column;gap:12px}
+.kpi .v{font-size:32px;font-weight:500;letter-spacing:-1px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 14px;border-radius:10px;font:500 13px 'Inter Tight',sans-serif;border:1px solid var(--line2);background:#131917;color:var(--tx2);cursor:pointer;box-shadow:inset 0 1px 0 #ffffff0a;white-space:nowrap;transition:background .15s,filter .15s,transform .1s}
+.btn:hover{background:#18201D;color:#fff}.btn:active{transform:translateY(1px)}
+.btn.pri{background:linear-gradient(180deg,#5BE8AB,#2ECB86);border-color:#45D99A;color:#06120D;font-weight:600;box-shadow:inset 0 1px 0 #ffffff66,0 10px 26px -10px #3DDC97cc}
+.btn.pri:hover{filter:brightness(1.07);color:#06120D}
+.btn.danger{color:var(--cor);border-color:#4A2C24}
+.btn.lg{height:50px;font-size:14px;border-radius:12px}.btn.sm{height:32px;padding:0 10px;font-size:12px}.btn.ic{width:40px;padding:0}.btn.full{width:100%}
+.btn[disabled]{opacity:.45;pointer-events:none}
+.chip{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:999px;font-size:12px;font-weight:500;white-space:nowrap;box-shadow:inset 0 0 0 1px #ffffff0f}
+.chip i{width:6px;height:6px;border-radius:50%;display:block;background:currentColor;box-shadow:0 0 8px 1px currentColor}
+.s-new{background:var(--blued);color:var(--blue)}.s-proc{background:var(--ambd);color:var(--amb)}.s-prep{background:var(--emd);color:var(--em2)}
+.s-list{background:var(--gryd);color:var(--gry)}.s-sold{background:var(--lild);color:var(--lil)}.s-arch{background:#171A19;color:var(--mut2)}
+.code{display:inline-flex;align-items:center;height:22px;padding:0 7px;border-radius:6px;font:500 12px 'JetBrains Mono',monospace;white-space:nowrap;cursor:pointer;border:0}
+.tag{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:999px;font-size:12px;background:#171E1C;border:1px solid #24302B;color:#B7C3BD;white-space:nowrap}
+.bin{display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:6px;background:#151C1A;border:1px solid #24302B;font:500 12px 'JetBrains Mono',monospace;color:#B7C3BD}
+.tabs{display:flex;gap:4px;padding:4px;border-radius:12px;background:var(--card2);border:1px solid var(--line);flex-wrap:wrap}
+.tabs button{height:36px;padding:0 14px;border-radius:9px;border:0;background:transparent;color:var(--mut);font:500 13px 'Inter Tight',sans-serif;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:1 1 auto}
+.tabs button:hover{color:var(--tx)}
+.tabs button.on{background:linear-gradient(180deg,#1E2B27,#18221F);box-shadow:inset 0 0 0 1px #2E4239,inset 0 1px 0 #ffffff12,0 4px 12px -6px #000;color:var(--tx)}
+.tabs b{font:500 11px 'JetBrains Mono',monospace;color:var(--mut2)}
+.search{display:flex;align-items:center;gap:10px;height:42px;padding:0 12px;border-radius:10px;border:1px solid var(--line2);background:var(--card2);color:var(--mut2);flex:0 1 320px;min-width:200px}
+.search input{border:0;outline:none;background:transparent;color:var(--tx);font:400 13px 'Inter Tight',sans-serif;width:100%}
+.sel,.in,.ta{height:44px;border-radius:11px;border:1px solid var(--line2);background:var(--card2);color:var(--tx);padding:0 13px;font:400 14px 'Inter Tight',sans-serif;outline:none;width:100%;color-scheme:dark;transition:border-color .15s,box-shadow .15s}
+.sel.sm{height:40px;width:auto;font-size:13px}
+.ta{height:auto;padding:11px 13px;resize:vertical;line-height:1.5;min-height:80px}
+.in:focus,.sel:focus,.ta:focus{border-color:var(--em);box-shadow:0 0 0 3px #3DDC9726}
+.in.mono{font-family:'JetBrains Mono',monospace}
+.fld{display:flex;flex-direction:column;gap:7px;min-width:0}
+.fld>label,.fld>.lb{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:500;color:#B7C3BD}
+.fld em{font-style:normal;color:var(--em);margin-left:-4px}
+.opt{font-size:11px;font-weight:500;color:var(--mut2);padding:2px 7px;border-radius:999px;background:#171E1C;border:1px solid #24302B}
+.li{width:24px;height:24px;border-radius:7px;display:inline-grid;place-items:center;flex-shrink:0;color:var(--mut);background:#171E1C;box-shadow:inset 0 0 0 1px var(--line2)}
+.li.req{color:var(--em);background:var(--emd);box-shadow:inset 0 0 0 1px #1D4A35,0 0 12px -4px #3DDC9799}
+.money{position:relative}.money>span{position:absolute;left:13px;top:13px;color:var(--mut2);font:400 14px 'JetBrains Mono',monospace;pointer-events:none}.money .in{padding-left:28px;font-family:'JetBrains Mono',monospace}
+.seg{display:flex;gap:4px;padding:4px;border-radius:12px;background:var(--card2);border:1px solid var(--line);flex-wrap:wrap}
+.seg button{flex:1 1 auto;height:38px;padding:0 14px;border:0;border-radius:9px;background:transparent;color:var(--mut);font:500 13px 'Inter Tight',sans-serif;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.seg button.on{background:linear-gradient(180deg,#1E2B27,#18221F);box-shadow:inset 0 0 0 1px #2E4239,inset 0 1px 0 #ffffff12;color:var(--tx)}
+.cd{width:8px;height:8px;border-radius:50%;display:block}
+.tblwrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%}
+th{font-size:11px;font-weight:600;color:var(--mut2);text-transform:uppercase;letter-spacing:.07em;text-align:left;padding:12px 16px;border-bottom:1px solid var(--line);white-space:nowrap;background:#0F1413}
+td{font-size:14px;color:var(--tx2);padding:12px 16px;border-bottom:1px solid #18201D;white-space:nowrap}
+tbody tr{transition:background .12s}tbody tr:hover td{background:#141C19}
+tr.click{cursor:pointer}
+.cat{border-radius:10px;display:grid;place-items:center;flex-shrink:0;box-shadow:inset 0 0 0 1px #ffffff12}
+.cell-item{display:flex;align-items:center;gap:12px}
+.empty{padding:44px 20px;text-align:center;color:var(--mut2);font-size:14px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:11px 0;border-bottom:1px solid #1A2220;font-size:14px}
+.row:last-child{border-bottom:0}
+.bar{height:8px;border-radius:4px;background:#1A2220;flex-grow:1;overflow:hidden}.bar>div{height:100%;border-radius:4px;background:var(--em)}
+.ph{aspect-ratio:1/1;border-radius:12px;background:#151C1A;border:1px solid #24302B;position:relative;overflow:hidden}
+.ph img{width:100%;height:100%;object-fit:cover;display:block}
+.ph .tools{position:absolute;inset:auto 6px 6px 6px;display:flex;gap:4px;justify-content:space-between;opacity:0;transition:opacity .15s}
+.ph:hover .tools,.ph:focus-within .tools{opacity:1}
+.ph .tools button{width:28px;height:28px;border-radius:8px;border:0;background:#0B0E0Dd9;color:var(--tx);cursor:pointer;display:grid;place-items:center}
+.ph .cover{position:absolute;left:6px;top:6px;font-size:10px;padding:2px 6px;border-radius:4px;background:var(--em);color:#06120D;font-weight:600}
+.drop{border:1.5px dashed #2E3B36;border-radius:12px;display:grid;place-items:center;color:var(--mut);font-size:12px;cursor:pointer;aspect-ratio:1/1;background:transparent;text-align:center;padding:8px}
+.drop.over{border-color:var(--em);background:#0F1F18;color:var(--em2)}
+.steps{list-style:none;margin:0;padding:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px}
+.steps li{display:flex;align-items:center;gap:8px;color:var(--mut2)}.steps li.on{color:var(--tx)}
+.steps .n{width:26px;height:26px;border-radius:50%;border:1px solid #2E3B36;display:grid;place-items:center;font:500 12px 'JetBrains Mono',monospace}
+.steps li.on .n{background:var(--em);color:#06120D;border-color:var(--em)}.steps li.done .n{background:#16302A;color:var(--em2);border-color:#16302A}
+.steps .ln{width:28px;height:1px;background:#2A3632}
+.notice{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border-radius:12px;background:#1A1710;border:1px solid #3A3018;color:#E9D6A6;font-size:13px;line-height:1.5}
+.notice.info{background:#0F1A15;border-color:#1D3A2C;color:#BFE8D3}
+.notice.bad{background:#1F1210;border-color:#4A2C24;color:#F4C4B6}
+.toasts{position:fixed;right:20px;bottom:20px;z-index:300;display:flex;flex-direction:column;gap:8px;max-width:min(380px,calc(100vw - 40px))}
+.toast{background:#151C1A;border:1px solid #2A3A33;color:var(--tx);padding:12px 16px;border-radius:12px;font-size:13px;box-shadow:0 18px 40px -16px #000;display:flex;gap:10px;align-items:flex-start;animation:tin .25s ease-out}
+.toast.err{border-color:#5A3328;background:#1F1513}
+@keyframes tin{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+.modal-bg{position:fixed;inset:0;z-index:200;background:#050706cc;display:flex;align-items:flex-start;justify-content:center;padding:48px 16px;overflow-y:auto}
+.modal{width:100%;max-width:640px;background:linear-gradient(180deg,#131918,#101514);border:1px solid #24302B;border-radius:22px;box-shadow:0 30px 80px #000000a0}
+.modal .mh{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:24px 24px 0}
+.modal .mb{padding:20px 24px;display:flex;flex-direction:column;gap:16px}
+.modal .mf{display:flex;justify-content:flex-end;gap:8px;padding:16px 24px;border-top:1px solid var(--line);flex-wrap:wrap}
+.tl li{display:grid;grid-template-columns:56px 22px minmax(0,1fr);gap:0 12px}
+.tl .rail{position:relative;display:flex;justify-content:center}
+.tl .rail::before{content:"";position:absolute;top:0;bottom:0;width:1px;background:var(--line)}
+.tl .pt{position:relative;margin-top:18px;width:11px;height:11px;border-radius:50%}
+.fchip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;border:1px solid var(--line2);background:var(--card2);color:var(--mut);font:500 12px 'Inter Tight',sans-serif;cursor:pointer}
+.fchip b{font:500 11px 'JetBrains Mono',monospace}
+.key{height:56px;border-radius:14px;border:1px solid #222C28;background:linear-gradient(180deg,#151C1A,#111715);box-shadow:inset 0 1px 0 #ffffff0d,0 2px 0 #00000055;color:var(--tx);font:500 20px 'JetBrains Mono',monospace;cursor:pointer}
+.key:hover{background:#18201D}.key:active{transform:translateY(1px)}.key.g{font:500 13px 'Inter Tight',sans-serif;color:var(--mut)}
+.pickrow{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;background:var(--card2);border:1px solid var(--line);width:100%;text-align:left;cursor:pointer;color:var(--tx2);font:inherit}
+.pickrow:hover{border-color:#2E3C36}.pickrow.on{border-color:var(--em);background:#0F1F18}
+.skel{color:var(--mut2);padding:40px;text-align:center}
+@media (max-width:760px){
+  .main{padding:20px 16px 48px}.side{padding:16px}.g3,.g4{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .g2.stack,.g3.stack{grid-template-columns:1fr}.span3,.span2{grid-column:1/-1}
+  .head h1{font-size:26px}
+}
+@media (max-width:480px){.g2,.g3,.g4{grid-template-columns:1fr}.span2,.span3{grid-column:auto}}
+</style>
+</head>
+<body>
+<div id="app"><div class="skel">Opening the vault…</div></div>
+<div id="modal"></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script>
+(() => {
+'use strict';
+
+/* ════════════════════════════════════════════════════════════════
+   OBSIDIAN VAULT — single-page app
+   Data: shared realtime database (db) · Photos: artifact assets
+   ════════════════════════════════════════════════════════════════ */
+
+// ── tiny utils ────────────────────────────────────────────────────
+const $ = (s, r = document) => r.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const num = v => { const n = parseFloat(String(v ?? '').replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : 0; };
+const money = (n, sign) => { n = +n || 0; return (n < 0 ? '−' : (sign && n > 0 ? '+' : '')) + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+const money0 = n => { n = +n || 0; return (n < 0 ? '−' : '') + '$' + Math.round(Math.abs(n)).toLocaleString('en-US'); };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const localISO = (d = new Date()) => new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+const fmtDate = s => s ? new Date(s + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+const fmtShort = s => s ? new Date(s + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—';
+const daysSince = s => s ? Math.max(0, Math.round((new Date(localISO() + 'T12:00:00') - new Date(s + 'T12:00:00')) / 864e5)) : 0;
+const nowISO = () => new Date().toISOString();
+const uidShort = () => Math.random().toString(36).slice(2, 10);
+const LS = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+const TAB = uidShort();
+
+// ── icons ─────────────────────────────────────────────────────────
+const I = {
+  gem: '<path d="M12 2.5 20 8l-3 12.5H7L4 8z"/><path d="M4 8h16M12 2.5 9 8l3 12.5L15 8z"/>',
+  dash: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  box: '<path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5 12 12l9-4.5M12 12v9"/>',
+  db: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
+  users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/>',
+  book: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+  pulse: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+  sliders: '<path d="M4 6h10M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>', x: '<path d="M6 6l12 12M18 6 6 18"/>', check: '<path d="m5 12 5 5 9-10"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  down: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>', up: '<path d="M12 20V9M7 14l5-5 5 5M5 4h14"/>',
+  right: '<path d="m9 6 6 6-6 6"/>', left: '<path d="M19 12H5M11 6l-6 6 6 6"/>', arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  chevL: '<path d="m15 6-6 6 6 6"/>', chevR: '<path d="m9 6 6 6-6 6"/>', star: '<path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>', edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+  tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.5"/>', trend: '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+  wallet: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M15.5 14.5h2.5"/>', warn: '<path d="M12 3.5 2.5 20h19z"/><path d="M12 10v4.5M12 17.2v.3"/>',
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><circle cx="17.5" cy="17.5" r="3.5"/>',
+  chip: '<rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/>',
+  barcode: '<path d="M4 6v12M7.5 6v12M10 6v12M14 6v12M16.5 6v12M20 6v12"/>', layers: '<path d="M12 3 2 8l10 5 10-5z"/><path d="M2 13l10 5 10-5"/>',
+  photo: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 8"/>', link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  shop: '<path d="M6 8h12l-1 12H7z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>', sync: '<path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/>',
+  cash: '<rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/>', pin: '<path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>'
+};
+const ic = (n, s = 18, sw = 1.7, extra = '') => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${I[n] || ''}</svg>`;
+
+// ── domain constants ──────────────────────────────────────────────
+const CATS = {
+  Smartphone: { k: 'PH', c: '#8EC3FF', b: '#13243A', d: '<path d="M9.5 2.5h5a2.5 2.5 0 0 1 2.5 2.5v14a2.5 2.5 0 0 1-2.5 2.5h-5A2.5 2.5 0 0 1 7 19V5a2.5 2.5 0 0 1 2.5-2.5zM11 18.5h2"/>' },
+  Laptop: { k: 'LT', c: '#5FE6AC', b: '#0F2A1F', d: '<rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/>' },
+  Tablet: { k: 'TB', c: '#7FD6E8', b: '#10262B', d: '<rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M11 18h2"/>' },
+  Console: { k: 'GC', c: '#CDB4F5', b: '#231A2E', d: '<path d="M6 9h12a4 4 0 0 1 3.9 4.9l-.6 2.6a2.5 2.5 0 0 1-4.3 1.1L15 15.5H9l-2 2.1a2.5 2.5 0 0 1-4.3-1.1l-.6-2.6A4 4 0 0 1 6 9z"/><path d="M7.5 11.5v3M6 13h3M16 12h.01M18 14h.01"/>' },
+  Audio: { k: 'AU', c: '#F2C063', b: '#2B2312', d: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>' },
+  'Computer Parts': { k: 'CP', c: '#F2A08A', b: '#2E1B16', d: I.chip },
+  Accessory: { k: 'AC', c: '#C9CCD6', b: '#1E2026', d: '<path d="M9 2v6M15 2v6M7 8h10v4a5 5 0 0 1-10 0zM12 17v5"/>' },
+  Other: { k: 'OT', c: '#9AA9A2', b: '#171E1C', d: I.box }
+};
+const catTile = (cat, s = 36, r = 10) => { const c = CATS[cat] || CATS.Other; return `<span class="cat" role="img" aria-label="${esc(cat || 'Other')}" style="width:${s}px;height:${s}px;border-radius:${r}px;background:${c.b};color:${c.c}"><svg width="${Math.round(s / 2)}" height="${Math.round(s / 2)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${c.d}</svg></span>`; };
+const STATUS = { new: ['New', 's-new'], proc: ['Processing', 's-proc'], prep: ['Prepared', 's-prep'], list: ['Listed', 's-list'], sold: ['Sold', 's-sold'], arch: ['Archived', 's-arch'] };
+const FLOW = ['new', 'proc', 'prep', 'list', 'sold'];
+const STOCK = ['new', 'proc', 'prep', 'list'];
+const chip = st => `<span class="chip ${(STATUS[st] || STATUS.new)[1]}"><i></i>${(STATUS[st] || STATUS.new)[0]}</span>`;
+const CONDS = { Excellent: '#3DDC97', Good: '#7FD6E8', Fair: '#F2C063', 'For Parts': '#F2A08A' };
+const SOURCES = ['Walk-in', 'Meta Ads', 'Google Search', 'Direct / Referral'];
+const PAY = ['Cash', 'Zelle', 'Venmo', 'Other'];
+const TX_METHODS = ['Card', 'Cash', 'Zelle', 'Venmo', 'Transfer', 'Payout'];
+const TX_CATS = ['Inventory acquisition', 'Sales', 'Marketplace fees', 'Shipping', 'Supplies', 'Repairs', 'Computer parts', 'Marketing', 'Software & subscriptions', 'Rent & utilities', 'Travel', 'Taxes & filing', 'Owner funding', 'Transfers', 'Other'];
+const CHANNELS = { eBay: 'Fees from your fee % setting', Shopify: '2.9% + $0.30', Local: 'In-store / meetup', Other: 'Enter fees manually' };
+const CODES = {
+  VR: ['Vault record · item', '#3DDC97', '#0F2A1F'], PU: ['Purchase / intake', '#8EC3FF', '#13243A'], LT: ['Listing', '#C9CCD6', '#1E2026'],
+  SL: ['Sale', '#CDB4F5', '#231A2E'], RT: ['Return / refund', '#F2A08A', '#2E1B16'], TX: ['Bookkeeping transaction', '#F2C063', '#2B2312'],
+  AJ: ['Adjustment', '#B7C3BD', '#1A1D1C'], CU: ['Customer', '#7FD6E8', '#10262B'], SYS: ['System / session', '#9AA9A2', '#171A19']
+};
+const codeType = c => { const p = String(c || '').split('-')[0]; return CODES[p] ? p : 'SYS'; };
+const codeChip = (c, act = true) => { const t = CODES[codeType(c)]; return `<button type="button" class="code" style="color:${t[1]};background:${t[2]}" ${act ? `data-act="goto" data-code="${esc(c)}"` : 'tabindex="-1"'} title="${esc(t[0])}">${esc(c)}</button>`; };
+const DEFAULT_SETTINGS = { owners: { o1: 'Owner 1', o2: 'Owner 2' }, bins: ['A-01', 'A-02', 'B-01', 'B-02', 'CAGE-1', 'BACK'], feePct: 13.25, shipFlat: 15, riskPct: 3, autoLock: 15, shopify: { mode: 'export', store: '', relayUrl: '', notes: '' } };
+const OWNER_COLORS = { o1: ['#3DDC97', '#06120D'], o2: ['#8EC3FF', '#071422'] };
+
+// ── state ─────────────────────────────────────────────────────────
+const S = {
+  db: null, live: false, mode: 'local', fb: null, needLogin: false, login: null, assets: null, user: null, dl: null, uid: null,
+  items: {}, customers: {}, purchases: {}, sales: {}, txs: {}, activity: {}, settings: { ...DEFAULT_SETTINGS }, loaded: {},
+  pending: 0, syncErr: null, uploads: {},
+  owner: null, pins: null, pinsLoaded: false,
+  lock: { who: 'o1', pin: '', err: '', fails: 0, until: 0, setup: { p1: '', c1: '', p2: '', c2: '' } },
+  route: { page: 'dashboard', arg: '' },
+  ui: {
+    inv: { tab: 'all', q: '' }, master: { tab: 'all', bin: 'all', cat: 'all', q: '', sel: {}, page: 0 },
+    cust: { q: '', src: 'all', sel: null }, books: { dir: 'all', cat: 'all', who: 'all', month: localISO().slice(0, 7) },
+    act: { type: 'all', who: 'all', q: '' }, intake: null, sale: null, edit: {}
+  },
+  modal: null, toasts: [], lastAct: Date.now()
+};
+const ownerName = o => (S.settings.owners || {})[o] || (o === 'o2' ? 'Owner 2' : o === 'sys' ? 'System' : 'Owner 1');
+
+// ════════════════════════════════════════════════════════════════
+//  BACKENDS — the app talks to one interface, whichever is active:
+//    db.doc(path)          → { get, set, update, delete, onSnapshot }
+//    db.collection(path)   → { limit, get, onSnapshot, doc }
+//    db.atomic(path, fn)   → race-free read-modify-write; fn(current|null) returns new data, or undefined to skip
+//    assets                → { upload(blob,{type}) → {id}, delete(id), list? }
+//  Order of preference: claude.ai shared database → Firebase (config.js) → this browser only.
+// ════════════════════════════════════════════════════════════════
+const clean = d => JSON.parse(JSON.stringify(d));
+const deepMerge = (a, b) => { const o = { ...(a || {}) }; for (const k in b) o[k] = (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && a && a[k] && typeof a[k] === 'object' && !Array.isArray(a[k])) ? deepMerge(a[k], b[k]) : b[k]; return o; };
+
+// 1) LOCAL MODE — saved in this browser (localStorage for records, IndexedDB for photos)
+function localDB() {
+  const KEY = 'ov.store.v1'; let store;
+  const load = () => { try { store = new Map(Object.entries(JSON.parse(localStorage.getItem(KEY) || '{}'))); } catch (e) { store = new Map(); } };
+  load(); const subs = new Set(); const notify = () => subs.forEach(f => f());
+  let t = 0; const persist = () => { clearTimeout(t); t = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(Object.fromEntries(store))); } catch (e) { toast('This browser’s storage is full — download a backup and connect Firebase.', 'err'); } }, 120); };
+  window.addEventListener('storage', e => { if (e.key === KEY) { load(); notify(); } }); // other tabs in this browser stay in sync
+  const snapDoc = p => ({ id: p.split('/').pop(), exists: store.has(p), data: () => store.get(p), metadata: { fromCache: false, hasPendingWrites: false } });
+  const put = (p, d) => { store.set(p, clean(d)); notify(); persist(); };
+  const doc = p => ({
+    id: p.split('/').pop(), path: p,
+    get: async () => snapDoc(p),
+    set: async d => put(p, d),
+    update: async d => { if (!store.has(p)) throw { code: 'invalid_argument', message: 'missing' }; put(p, deepMerge(store.get(p), clean(d))); },
+    delete: async () => { store.delete(p); notify(); persist(); },
+    onSnapshot: next => { const f = () => next(snapDoc(p)); subs.add(f); setTimeout(f); return () => subs.delete(f); }
+  });
+  const collection = p => {
+    const q = {
+      path: p, limit: () => q, doc: id => doc(p + '/' + (id || uidShort())),
+      get: async () => { const docs = [...store.keys()].filter(k => k.startsWith(p + '/') && k.split('/').length === p.split('/').length + 1).map(snapDoc); return { docs, size: docs.length, empty: !docs.length }; },
+      onSnapshot: next => { const f = async () => next(await q.get()); subs.add(f); setTimeout(f); return () => subs.delete(f); }
+    };
+    return q;
+  };
+  const atomic = async (p, fn) => { const nx = fn(store.has(p) ? store.get(p) : null); if (nx !== undefined) put(p, nx); return nx; };
+  return { doc, collection, atomic };
+}
+function localAssets() {
+  let dbp = null; const cache = {};
+  const open = () => new Promise((res, rej) => { const r = indexedDB.open('ov-photos', 1); r.onupgradeneeded = () => r.result.createObjectStore('p'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+  const tx = async (mode, fn) => { dbp = dbp || open(); const d = await dbp; return new Promise((res, rej) => { const t = d.transaction('p', mode); const q = fn(t.objectStore('p')); t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); }); };
+  return {
+    upload: async blob => { const id = 'local-' + Date.now() + '-' + uidShort(); await tx('readwrite', s => s.put(blob, id)); cache[id] = URL.createObjectURL(blob); return { id, url: cache[id] }; },
+    delete: async id => { await tx('readwrite', s => s.delete(id)); return { deleted: true }; },
+    url: id => { if (cache[id]) return cache[id]; if (cache[id] === undefined) { cache[id] = null; tx('readonly', s => s.get(id)).then(b => { if (b) { cache[id] = URL.createObjectURL(b); renderSoon(); } }).catch(() => {}); } return null; },
+    blob: id => tx('readonly', s => s.get(id))
+  };
+}
+
+// 2) CLAUDE.AI MODE — the artifact's shared realtime database + asset store
+function claudeDB(db) {
+  return {
+    doc: p => db.doc(p), collection: p => db.collection(p),
+    atomic: async (p, fn) => {
+      const r = db.doc(p);
+      for (let i = 0; i < 25; i++) {
+        const lease = await r.acquire({ holder: TAB + '-' + i, ttlMs: 5000 });
+        if (lease.acquired) { const s = await r.get(); const nx = fn(s.exists ? s.data() : null); if (nx !== undefined) await r.set(nx); return nx; }
+        await sleep(150 + Math.random() * 300);
+      }
+      throw { code: 'busy', message: 'The vault is busy, try again.' };
+    }
+  };
+}
+
+// 3) FIREBASE MODE — Firestore (records, realtime, offline cache) + Storage (photos) + Auth (email/password)
+const FB_VERSION = '10.12.2';
+async function firebaseBackend(cfg, opts = {}) {
+  const base = `https://www.gstatic.com/firebasejs/${FB_VERSION}/`;
+  const [app, fs, au, st] = await Promise.all(['firebase-app', 'firebase-firestore', 'firebase-auth', 'firebase-storage'].map(m => import(base + m + '.js')));
+  const fapp = app.initializeApp(cfg);
+  let db; try { db = fs.initializeFirestore(fapp, { localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() }) }); } catch (e) { db = fs.getFirestore(fapp); }
+  const auth = au.getAuth(fapp); const storage = st.getStorage(fapp);
+  const wrap = s => ({ id: s.id, exists: s.exists(), data: () => s.data(), metadata: s.metadata });
+  const flat = (o, pre = '', out = {}) => { for (const [k, v] of Object.entries(o)) { const key = pre ? pre + '.' + k : k; if (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length) flat(v, key, out); else out[key] = v; } return out; };
+  const mapErr = e => { const c = (e && e.code) || ''; return c.includes('permission-denied') ? { code: 'revoked', message: 'This account is not allowed in the vault.' } : c.includes('resource-exhausted') ? { code: 'quota_exceeded', message: e.message } : c.includes('unavailable') ? { code: 'unavailable', message: e.message } : e; };
+  const guard = f => async (...a) => { try { return await f(...a); } catch (e) { throw mapErr(e); } };
+  const doc = p => { const r = fs.doc(db, p); return {
+    id: r.id, path: p,
+    get: guard(async () => wrap(await fs.getDoc(r))),
+    set: guard(d => fs.setDoc(r, clean(d))),
+    update: guard(d => fs.updateDoc(r, flat(clean(d)))),
+    delete: guard(() => fs.deleteDoc(r)),
+    onSnapshot: (n, e) => fs.onSnapshot(r, s => n(wrap(s)), err => e && e(mapErr(err)))
+  }; };
+  const collection = p => { let lim = 1000; const qy = () => fs.query(fs.collection(db, p), fs.limit(lim)); const q = {
+    path: p, limit: n => { lim = n; return q; }, doc: id => doc(p + '/' + (id || uidShort())),
+    get: guard(async () => { const s = await fs.getDocs(qy()); return { docs: s.docs.map(wrap), size: s.size, empty: s.empty }; }),
+    onSnapshot: (n, e) => fs.onSnapshot(qy(), { includeMetadataChanges: false }, s => n({ docs: s.docs.map(wrap), size: s.size, empty: s.empty, metadata: s.metadata }), err => e && e(mapErr(err)))
+  }; return q; };
+  const atomic = guard((p, fn) => fs.runTransaction(db, async t => { const r = fs.doc(db, p); const s = await t.get(r); const nx = fn(s.exists() ? s.data() : null); if (nx !== undefined) t.set(r, clean(nx)); return nx; }));
+  // Photos: 'firestore' (default — free Spark plan, photos compressed to ~1600px and stored as documents)
+  //         'storage'   (Cloud Storage — full-size files, needs the Blaze plan; see README)
+  const cache = {};
+  const toJpeg = async (blob, max, q) => { const bm = await createImageBitmap(blob); const sc = Math.min(1, max / Math.max(bm.width, bm.height)); const cv = document.createElement('canvas'); cv.width = Math.round(bm.width * sc); cv.height = Math.round(bm.height * sc); cv.getContext('2d').drawImage(bm, 0, 0, cv.width, cv.height); return await new Promise(r => cv.toBlob(r, 'image/jpeg', q)); };
+  const b64of = b => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = rej; fr.readAsDataURL(b); });
+  const fromB64 = (d, type) => new Blob([Uint8Array.from(atob(d), c => c.charCodeAt(0))], { type });
+  const assets = (opts.photos === 'storage') ? {
+    upload: async (blob, o = {}) => { const type = o.type || blob.type || 'image/jpeg'; const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[type] || 'jpg'; const r = st.ref(storage, `photos/${Date.now()}-${uidShort()}.${ext}`); try { await st.uploadBytes(r, blob, { contentType: type, cacheControl: 'public,max-age=31536000' }); return { id: await st.getDownloadURL(r) }; } catch (e) { throw { code: String(e.code || '').includes('quota') ? 'quota_or_state' : 'upstream_error', message: e.message }; } },
+    delete: async id => { try { await st.deleteObject(st.ref(storage, id)); } catch (e) {} return { deleted: true }; }
+  } : {
+    upload: async blob => {
+      let max = 1600, q = 0.82, out = await toJpeg(blob, max, q);
+      while (out.size > 650000 && max > 700) { max = Math.round(max * 0.8); q = Math.max(0.6, q - 0.06); out = await toJpeg(blob, max, q); }
+      const id = 'fs-' + Date.now() + '-' + uidShort();
+      try { await fs.setDoc(fs.doc(db, 'photos/' + id), { type: 'image/jpeg', data: await b64of(out), bytes: out.size, at: new Date().toISOString() }); }
+      catch (e) { throw mapErr(e); }
+      cache[id] = URL.createObjectURL(out); return { id, url: cache[id] };
+    },
+    delete: async id => { try { await fs.deleteDoc(fs.doc(db, 'photos/' + id)); } catch (e) {} return { deleted: true }; },
+    url: id => { if (cache[id]) return cache[id]; if (cache[id] === undefined) { cache[id] = null; fs.getDoc(fs.doc(db, 'photos/' + id)).then(s => { if (s.exists()) { cache[id] = URL.createObjectURL(fromB64(s.data().data, s.data().type)); renderSoon(); } }).catch(() => { delete cache[id]; }); } return null; },
+    blob: async id => { const s = await fs.getDoc(fs.doc(db, 'photos/' + id)); return s.exists() ? fromB64(s.data().data, s.data().type) : null; }
+  };
+  return {
+    db: { doc, collection, atomic }, assets,
+    onAuth: cb => au.onAuthStateChanged(auth, cb),
+    signIn: (email, pw) => au.signInWithEmailAndPassword(auth, email, pw),
+    resetPw: email => au.sendPasswordResetEmail(auth, email),
+    signOut: () => au.signOut(auth)
+  };
+}
+
+// photo address for any backend
+const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+function photoUrl(id) { id = String(id || ''); if (/^https?:\/\//.test(id)) return id; if (id.startsWith('local-') || id.startsWith('fs-')) return (S.assets && S.assets.url && S.assets.url(id)) || PIXEL; return '/_blob/' + id; }
+async function photoBlob(id) { if (/^(local|fs)-/.test(String(id))) return S.assets.blob(id); const r = await fetch(photoUrl(id)); if (!r.ok) throw new Error('photo ' + r.status); return r.blob(); }
+
+// ── writes with sync tracking ─────────────────────────────────────
+async function write(fn, label) {
+  S.pending++; paintSync();
+  try {
+    try { return await fn(); }
+    catch (e) {
+      if (e && (e.code === 'unavailable' || e.code === 'store_unavailable')) { await sleep(500 + Math.random() * 700); return await fn(); }
+      throw e;
+    }
+  } catch (e) {
+    S.syncErr = e; const msg = e && e.code === 'quota_exceeded' ? 'The vault database is full. Export a backup and archive old records.' : e && e.code === 'revoked' ? (e.message || 'Access to this vault changed. Reload the page.') : `Couldn't save${label ? ' ' + label : ''}. Check your connection and try again.`;
+    toast(msg, 'err'); throw e;
+  } finally { S.pending--; paintSync(); }
+}
+const ref = p => S.db.doc(p);
+
+// Record codes — atomic counters so two devices never get the same number
+const PADS = { VR: 5, PU: 4, LT: 4, SL: 4, RT: 4, TX: 4, AJ: 4, CU: 4 };
+async function nextCode(prefix) {
+  const d = await S.db.atomic('counters/' + prefix, cur => ({ n: ((cur && cur.n) || 0) + 1 }));
+  return prefix + '-' + String(d.n).padStart(PADS[prefix] || 4, '0');
+}
+
+// Activity log — appended atomically in monthly chunks per owner
+async function logAct(type, verb, code, obj = '', detail = '', links = [], from = '', to = '') {
+  const e = { t: nowISO(), by: S.owner || 'sys', uid: S.uid || '', type, verb, code: code || '', obj: obj || '', detail: detail || '', links: links || [], from: from || '', to: to || '' };
+  const month = e.t.slice(0, 7).replace('-', '');
+  try {
+    await write(async () => {
+      for (let part = 1; part < 40; part++) {
+        const r = await S.db.atomic(`activity/${month}-${e.by}-${part}`, cur => { const list = (cur && Array.isArray(cur.entries)) ? cur.entries : []; if (list.length >= 600) return undefined; return { month, by: e.by, part, entries: [...list, e] }; });
+        if (r !== undefined) return;
+      }
+    }, 'activity');
+  } catch (err) { /* logging must never block the action itself */ }
+}
+
+// ── boot ──────────────────────────────────────────────────────────
+async function boot() {
+  const C = window.claude; const cfg = window.VAULT_CONFIG || {};
+  // 1) inside claude.ai
+  if (C && C.use) {
+    const use = n => C.use(n).catch(() => null);
+    const [db, assets, user, dl] = await Promise.all([use('db'), use('assets'), use('user'), use('downloads')]);
+    if (db) { S.mode = 'claude'; S.live = true; S.db = claudeDB(db); S.assets = assets; S.user = user; S.dl = dl; S.uid = user ? await user.id().catch(() => null) : null; }
+  }
+  // 2) Firebase (GitHub Pages or any host) when config.js has keys
+  if (!S.db && cfg.firebase && cfg.firebase.apiKey) {
+    try { const fb = await firebaseBackend(cfg.firebase, { photos: cfg.photos }); S.fb = fb; S.mode = 'firebase'; S.live = true; S.db = fb.db; S.assets = fb.assets; }
+    catch (e) { console.error(e); S.backendErr = 'Firebase could not start (' + (e.message || e) + '). Running in local mode.'; }
+  }
+  // 3) this browser only
+  if (!S.db) { S.mode = 'local'; S.live = false; S.db = localDB(); S.assets = localAssets(); }
+  if (S.mode === 'firebase') {
+    await new Promise(res => S.fb.onAuth(u => { if (u) { S.uid = u.uid; S.fbEmail = u.email; S.needLogin = false; res(); } else { S.needLogin = true; S.uid = null; render(); } }));
+  }
+  const COLS = ['items', 'customers', 'purchases', 'sales', 'txs', 'activity'];
+  for (const col of COLS) {
+    S.db.collection(col).limit(1000).onSnapshot(snap => {
+      const m = {}; snap.docs.forEach(d => { if (d.exists) m[d.id] = d.data(); });
+      S[col] = m; S.loaded[col] = true; renderSoon();
+    }, err => { S.syncErr = err; if (err && err.code === 'revoked') toast(err.message || 'Access denied.', 'err'); S.loaded[col] = true; renderSoon(); });
+  }
+  ref('meta/settings').onSnapshot(s => {
+    const d = s.exists ? s.data() : {};
+    S.settings = { ...DEFAULT_SETTINGS, ...d, owners: { ...DEFAULT_SETTINGS.owners, ...(d.owners || {}) }, shopify: { ...DEFAULT_SETTINGS.shopify, ...(d.shopify || {}) } };
+    S.loaded.settings = true; renderSoon();
+  }, () => { S.loaded.settings = true; renderSoon(); });
+  await loadPins();
+  const saved = (() => { try { return sessionStorage.getItem('ov.owner'); } catch (e) { return null; } })();
+  if (saved && S.pins && S.pins.o1) S.owner = saved;
+  window.addEventListener('hashchange', onRoute); onRoute();
+  window.addEventListener('online', paintSync); window.addEventListener('offline', paintSync);
+  setInterval(checkIdle, 30000);
+  render();
+}
+
+// ── Firebase sign-in screen (only in Firebase mode, once per device) ──
+function signInScreen() {
+  const L = S.login || (S.login = { email: '', pw: '', err: '', busy: false, info: '' });
+  return `<div style="min-height:100vh;display:grid;place-items:center;padding:40px 16px"><div class="card" style="width:100%;max-width:420px;padding:32px;display:flex;flex-direction:column;gap:18px">
+    <div class="brand" style="padding:0"><span class="gem" style="color:#3DDC97">${ic('gem', 20, 1.6)}</span>Obsidian Gadget</div>
+    <div><div class="eyebrow">SIGN IN THIS DEVICE</div><h1 style="margin:8px 0 0;font-size:26px;letter-spacing:-.6px">Connect to the vault</h1><p class="mut2" style="margin:8px 0 0;font-size:14px">Use the vault account created in Firebase. You stay signed in on this device; owner PINs still lock the workspace.</p></div>
+    <div class="fld"><label for="lg-e">Email</label><input class="in" id="lg-e" type="email" autocomplete="username" data-bind="login.email" value="${esc(L.email)}"></div>
+    <div class="fld"><label for="lg-p">Password</label><input class="in" id="lg-p" type="password" autocomplete="current-password" data-bind="login.pw" value="${esc(L.pw)}"></div>
+    ${L.err ? `<div class="notice bad">${esc(L.err)}</div>` : ''}${L.info ? `<div class="notice info">${esc(L.info)}</div>` : ''}
+    <button class="btn pri lg" data-act="fbSignIn" ${L.busy ? 'disabled' : ''}>${L.busy ? 'Signing in…' : 'Sign in'}</button>
+    <button class="btn" style="border:0;background:transparent;box-shadow:none" data-act="fbReset">Forgot password</button></div></div>`;
+}
+
+// ── PINs (hashed, stored privately per signed-in account; per browser as fallback) ──
+const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function hashPin(pin, saltB64) {
+  const salt = saltB64 ? unb64(saltB64) : crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 120000, hash: 'SHA-256' }, key, 256);
+  return { salt: b64(salt), hash: b64(bits) };
+}
+// Firebase: shared by both owners' devices (Firestore rules limit it to vault accounts). claude.ai: private per signed-in viewer.
+const pinRef = () => S.mode === 'firebase' ? ref('meta/security') : (S.mode === 'claude' && S.uid) ? ref('data/users/' + S.uid + '/security') : null;
+async function loadPins() {
+  try { const r = pinRef(); if (r) { const s = await r.get(); S.pins = s.exists ? s.data().pins || null : null; } else S.pins = LS.get('ov.pins'); }
+  catch (e) { S.pins = LS.get('ov.pins'); }
+  S.pinsLoaded = true;
+}
+async function savePins(pins) { S.pins = pins; const r = pinRef(); if (r) await write(() => r.set({ pins }), 'PINs'); else LS.set('ov.pins', pins); }
+function setOwner(o) { S.owner = o; try { sessionStorage.setItem('ov.owner', o || ''); } catch (e) {} }
+function lockNow() { setOwner(null); S.lock.pin = ''; S.lock.err = ''; render(); }
+function checkIdle() { const m = +S.settings.autoLock || 0; if (S.owner && m > 0 && Date.now() - S.lastAct > m * 60000) lockNow(); }
+
+// ── routing ───────────────────────────────────────────────────────
+function onRoute() {
+  const h = (location.hash || '#/dashboard').slice(2).split('/');
+  S.route = { page: h[0] || 'dashboard', arg: decodeURIComponent(h.slice(1).join('/') || '') };
+  if (S.route.page === 'intake' && !S.ui.intake) S.ui.intake = newIntake();
+  if (S.route.page === 'sell') S.ui.sale = newSale(S.route.arg);
+  window.scrollTo(0, 0); render();
+}
+const go = h => { if (location.hash === h) onRoute(); else location.hash = h; };
+
+// ── render with focus preservation ────────────────────────────────
+let rq = 0;
+function renderSoon() { if (rq) return; rq = requestAnimationFrame(() => { rq = 0; render(); }); }
+function render() {
+  const app = $('#app'); const a = document.activeElement; let keep = null;
+  if (a && a.id && (app.contains(a) || $('#modal').contains(a))) keep = { id: a.id, s: a.selectionStart, e: a.selectionEnd };
+  app.innerHTML = S.needLogin ? signInScreen() : S.owner ? shell() : lockScreen();
+  $('#modal').innerHTML = S.modal ? modalHtml() : '';
+  if (keep) { const el = document.getElementById(keep.id); if (el) { el.focus({ preventScroll: true }); try { if (keep.s != null) el.setSelectionRange(keep.s, keep.e); } catch (e) {} } }
+  paintSync(); paintToasts();
+}
+function paintSync() {
+  const el = $('#syncline'); if (!el) return;
+  let dot = '', txt = '';
+  if (S.mode === 'local') { dot = 'warn'; txt = 'Local mode — saved in this browser only'; }
+  else if (!navigator.onLine) { dot = 'warn'; txt = S.pending ? `Offline — ${S.pending} change${S.pending > 1 ? 's' : ''} queued, will sync` : 'Offline — changes will sync when back'; }
+  else if (S.pending > 0) { dot = 'warn'; txt = `Saving ${S.pending} change${S.pending > 1 ? 's' : ''}…`; }
+  else if (S.syncErr && S.syncErr.code === 'revoked') { dot = 'bad'; txt = 'Access changed — reload'; }
+  else { txt = 'Synced · live on every device'; }
+  el.innerHTML = `<span class="dot ${dot}"></span>${esc(txt)}`;
+}
+function toast(msg, kind = '') { const id = uidShort(); S.toasts.push({ id, msg, kind }); paintToasts(); setTimeout(() => { S.toasts = S.toasts.filter(t => t.id !== id); paintToasts(); }, kind === 'err' ? 7000 : 3500); }
+function paintToasts() { $('#toasts').innerHTML = S.toasts.map(t => `<div class="toast ${t.kind}">${t.kind === 'err' ? `<span class="cor">${ic('warn', 16)}</span>` : `<span class="em">${ic('check', 16, 2.2)}</span>`}<span>${esc(t.msg)}</span></div>`).join(''); }
+
+// ── lock screen ───────────────────────────────────────────────────
+function lockScreen() {
+  if (!S.pinsLoaded || !S.loaded.settings) return '<div class="skel">Opening the vault…</div>';
+  const L = S.lock; const first = !(S.pins && S.pins.o1 && S.pins.o2);
+  const art = `<svg aria-hidden="true" viewBox="0 0 400 460" style="position:absolute;right:-70px;bottom:-60px;width:520px;height:auto;pointer-events:none"><polygon points="200,10 330,120 200,450" fill="#12271F"/><polygon points="200,10 70,120 200,450" fill="#0E1D18"/><polygon points="70,120 330,120 200,450" fill="#163327" fill-opacity=".55"/><polygon points="200,10 150,120 200,450 250,120" fill="#1B3D2F" fill-opacity=".5"/><polygon points="200,10 250,120 330,120" fill="#24563F" fill-opacity=".55"/><polyline points="70,120 200,10 330,120 200,450 70,120 330,120" fill="none" stroke="#3DDC97" stroke-opacity=".35" stroke-width="1.2"/><circle cx="250" cy="120" r="3" fill="#8BF0C4"/></svg>`;
+  const left = `<section style="flex:1 1 440px;min-width:0;padding:48px 56px;display:flex;flex-direction:column;justify-content:space-between;gap:40px;border-right:1px solid #1A2320;background:#0D1110;position:relative;overflow:hidden">${art}
+    <div class="brand" style="padding:0;position:relative"><span class="gem" style="color:#3DDC97">${ic('gem', 20, 1.6)}</span><div><div>Obsidian Gadget</div><div class="sm mut2" style="font-weight:400">Gadget Flippers workspace</div></div></div>
+    <div style="position:relative;max-width:520px"><h2 style="margin:0;font-size:52px;line-height:1.04;font-weight:600;letter-spacing:-1.8px">The Vault.</h2><p class="mut" style="margin:18px 0 0;font-size:16px;line-height:1.6">Intake, inventory, listing packets and the books — shared between both owners and synced live across devices.</p></div><div></div></section>`;
+  let card;
+  if (first) {
+    const f = (o, n) => `<fieldset class="card pad" style="margin:0;display:flex;flex-direction:column;gap:14px;background:#0E1211"><legend style="display:flex;align-items:center;gap:10px;padding:0 6px;font-weight:600"><span class="av" style="width:28px;height:28px;font-size:13px;background:${OWNER_COLORS[o][0]};color:${OWNER_COLORS[o][1]}">${n}</span>${esc(ownerName(o))}</legend>
+      <div class="fld"><label for="pin-p${n}">New PIN</label><input class="in mono" id="pin-p${n}" type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" data-bind="lock.setup.p${n}" value="${esc(L.setup['p' + n])}"></div>
+      <div class="fld"><label for="pin-c${n}">Confirm PIN</label><input class="in mono" id="pin-c${n}" type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" data-bind="lock.setup.c${n}" value="${esc(L.setup['c' + n])}"></div></fieldset>`;
+    card = `<div class="card" style="width:100%;max-width:640px;padding:32px;display:flex;flex-direction:column;gap:22px">
+      <div><div class="eyebrow">FIRST-TIME SETUP</div><h1 style="margin:8px 0 0;font-size:28px;letter-spacing:-.8px">Set your owner PINs</h1><p class="mut2" style="margin:8px 0 0;font-size:14px">Create a different 4–8 digit PIN for each owner. You can rename owners in Settings.</p></div>
+      <div class="grid g2 stack">${f('o1', 1)}${f('o2', 2)}</div>
+      ${L.err ? `<div class="notice bad">${esc(L.err)}</div>` : ''}
+      <button class="btn pri lg" data-act="setPins">Save PINs &amp; open workspace</button>
+      <p class="sm mut2" style="margin:0;line-height:1.6">${S.mode === 'firebase' ? 'PINs are hashed and stored in the vault, so they work on every signed-in device.' : S.mode === 'claude' ? 'PINs are hashed and saved privately to your signed-in account, so they work on every device you sign in on.' : 'PINs are hashed and saved in this browser.'}</p></div>`;
+  } else {
+    const wait = L.until > Date.now() ? Math.ceil((L.until - Date.now()) / 1000) : 0;
+    const dots = Array.from({ length: 8 }, (_, i) => `<span style="width:12px;height:12px;border-radius:50%;${i < L.pin.length ? 'background:#3DDC97;box-shadow:0 0 10px #3DDC97' : i < 4 ? 'border:1.5px solid #3A4A43' : 'border:1.5px dashed #26312C'}"></span>`).join('');
+    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map(k => `<button type="button" class="key ${/\d/.test(k) ? '' : 'g'}" data-act="key" data-k="${k}" aria-label="${k === 'C' ? 'Clear' : k === '⌫' ? 'Delete' : k}">${k === 'C' ? 'Clear' : k}</button>`).join('');
+    card = `<div class="card" style="width:100%;max-width:460px;padding:34px;display:flex;flex-direction:column;gap:24px">
+      <div><div class="eyebrow">WELCOME BACK</div><h1 style="margin:8px 0 0;font-size:28px;letter-spacing:-.8px">Unlock your workspace</h1><p class="mut2" style="margin:8px 0 0;font-size:14px">Choose your profile and enter your PIN.</p></div>
+      <div class="grid g2">${['o1', 'o2'].map((o, i) => `<button type="button" class="pickrow ${L.who === o ? 'on' : ''}" data-act="pickWho" data-o="${o}"><span class="av" style="width:40px;height:40px;background:${OWNER_COLORS[o][0]};color:${OWNER_COLORS[o][1]}">${i + 1}</span><span><span style="display:block;font-weight:600">${esc(ownerName(o))}</span><span class="sm mut2">Owner</span></span></button>`).join('')}</div>
+      <div style="display:flex;flex-direction:column;gap:10px"><div class="sm mut" style="display:flex;justify-content:space-between"><span>PIN for ${esc(ownerName(L.who))}</span><span class="mut2">4–8 digits · or type</span></div>
+      <div style="display:flex;gap:10px;height:52px;align-items:center;justify-content:center;border:1px solid #222C28;border-radius:14px;background:#0F1413">${dots}</div></div>
+      <div class="grid g3" style="gap:10px">${keys}</div>
+      ${wait ? `<div class="notice bad">Too many attempts. Try again in ${wait}s.</div>` : L.err ? `<div class="notice bad">${esc(L.err)}</div>` : ''}
+      <button class="btn pri lg" data-act="unlock" ${L.pin.length >= 4 && !wait ? '' : 'disabled'}>${ic('lock', 18)}Log in as ${esc(ownerName(L.who))}</button>
+      <p class="sm mut2" style="margin:0;text-align:center">PINs lock this workspace. Inventory is shared between both owners.</p></div>`;
+  }
+  return `<div style="min-height:100vh;display:flex;flex-wrap:wrap">${left}<section style="flex:1 1 480px;min-width:0;padding:40px 16px;display:flex;align-items:center;justify-content:center">${card}</section></div>`;
+}
+
+// ── shell ─────────────────────────────────────────────────────────
+const NAV = [['dashboard', 'Dashboard', 'dash'], ['inventory', 'Inventory Vault', 'box'], ['master', 'Master Vault', 'db'], ['customers', 'Customer Vault', 'users'], ['books', 'Bookkeeping', 'book'], ['activity', 'Activity', 'pulse'], ['settings', 'Settings', 'sliders']];
+const NAV_ALIAS = { item: 'inventory', sell: 'inventory', intake: 'inventory' };
+function shell() {
+  const p = S.route.page; const on = NAV_ALIAS[p] || p; const o = S.owner;
+  const side = `<aside class="side">
+    <div class="brand"><span class="gem" style="color:#3DDC97">${ic('gem', 20, 1.6)}</span>Obsidian Gadget</div>
+    <a class="btn pri" href="#/intake" style="height:42px">${ic('plus', 16, 2.2)}New Intake</a>
+    <nav class="nav">${NAV.map(([k, l, i]) => `<a href="#/${k}" class="${on === k ? 'on' : ''}">${ic(i)}${l}</a>`).join('')}</nav>
+    <div class="who"><span class="av" style="width:36px;height:36px;background:${OWNER_COLORS[o][0]};color:${OWNER_COLORS[o][1]}">${o === 'o1' ? 1 : 2}</span><div style="flex-grow:1;min-width:0"><div style="font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis">${esc(ownerName(o))}</div><div class="sm mut2">Owner</div></div><button class="btn ic" style="width:36px;height:36px" data-act="lock" aria-label="Lock / switch user" title="Lock / switch user">${ic('lock', 16)}</button></div>
+    <div class="sync" id="syncline"></div>
+  </aside>`;
+  const PAGES = { dashboard: pDashboard, inventory: pInventory, master: pMaster, item: pItem, intake: pIntake, sell: pSell, customers: pCustomers, books: pBooks, activity: pActivity, settings: pSettings };
+  const notLive = S.backendErr ? `<div class="notice bad">${ic('warn', 18)}<div>${esc(S.backendErr)}</div></div>` : (S.mode === 'local' && (p === 'dashboard' || p === 'settings')) ? `<div class="notice">${ic('warn', 18)}<div><b>Local mode:</b> records are saved in this browser only and won’t reach other devices. Add your Firebase keys to <span class="mono">config.js</span> to sync live everywhere — see the README. Download backups regularly until then.</div></div>` : '';
+  const loading = S.live && !(S.loaded.items && S.loaded.customers) ? '<div class="skel">Syncing records…</div>' : '';
+  return `<div class="shell">${side}<main class="main">${notLive}${loading || (PAGES[p] || pDashboard)()}</main></div>`;
+}
+const head = (sub, title, acts = '', eyebrow = '') => `<header class="head"><div>${eyebrow ? `<div class="eyebrow">${eyebrow}</div>` : `<div class="sm mut2" style="font-size:13px">${sub}</div>`}<h1>${title}</h1>${eyebrow && sub ? `<div class="mut2" style="font-size:14px;margin-top:6px">${sub}</div>` : ''}</div><div class="acts">${acts}</div></header>`;
+
+// ── economics ─────────────────────────────────────────────────────
+function econ(it) {
+  const resale = num(it.resale), cost = num(it.cost); const st = S.settings;
+  const fees = resale > 0 ? resale * (+st.feePct || 0) / 100 + (+st.shipFlat || 0) : 0;
+  const risk = resale * (+st.riskPct || 0) / 100;
+  if (it.status === 'sold' && it.sale) { const net = num(it.sale.price) - num(it.sale.fees) - num(it.sale.ship) - cost; return { resale, cost, fees: num(it.sale.fees) + num(it.sale.ship), risk: 0, margin: net, realized: true }; }
+  return { resale, cost, fees, risk, margin: resale - fees - risk - cost, realized: false };
+}
+const itemsArr = () => Object.values(S.items);
+const byNewest = (a, b) => (b.acquired || '').localeCompare(a.acquired || '') || (b.code || '').localeCompare(a.code || '');
+
+// ── DASHBOARD ─────────────────────────────────────────────────────
+function pDashboard() {
+  const all = itemsArr(); const stock = all.filter(i => STOCK.includes(i.status));
+  const cnt = s => all.filter(i => i.status === s).length;
+  const unsold = stock.reduce((a, i) => a + econ(i).margin, 0);
+  const month = localISO().slice(0, 7); const txs = Object.values(S.txs).filter(t => (t.date || '').startsWith(month));
+  const out = txs.filter(t => num(t.amount) < 0).reduce((a, t) => a + num(t.amount), 0);
+  const inn = txs.filter(t => num(t.amount) > 0).reduce((a, t) => a + num(t.amount), 0);
+  const kpi = (l, v, sub, icon, c, b) => `<div class="card kpi"><div style="display:flex;justify-content:space-between;align-items:center"><span class="mut" style="font-size:13px">${l}</span><span class="cat" style="width:34px;height:34px;background:${b};color:${c}">${ic(icon, 17)}</span></div><div class="v mono">${v}</div><div class="sm mut2">${sub}</div></div>`;
+  const pipe = [['new', '#8EC3FF'], ['proc', '#F2C063'], ['prep', '#3DDC97'], ['list', '#6B7080']];
+  const tot = pipe.reduce((a, [s]) => a + cnt(s), 0);
+  const recent = all.slice().sort(byNewest).slice(0, 6);
+  const since = localISO(new Date(Date.now() - 30 * 864e5));
+  const lead = SOURCES.map(s => [s, all.filter(i => i.source === s && (i.acquired || '') >= since).length]); const lmax = Math.max(1, ...lead.map(l => l[1]));
+  const h = new Date().getHours(); const greet = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  return head(new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), `${greet}, ${esc(ownerName(S.owner))}`,
+    `<button class="btn" data-act="backup">${ic('down', 16)}Backup</button><a class="btn pri" href="#/intake">${ic('plus', 16, 2.2)}New Intake</a>`) +
+    `<section class="grid g-auto">${kpi('Total inventory', stock.length, 'units in stock or listed', 'box', '#8EC3FF', '#13243A')}${kpi('Ready to list', cnt('prep'), 'prepared, waiting for a listing', 'tag', '#5FE6AC', '#0F2A1F')}${kpi('Est. unsold profit', money0(unsold), 'after fees, shipping &amp; risk', 'trend', '#CDB4F5', '#231A2E')}${kpi('Net this month', money0(inn + out), `${money0(inn)} in · ${money0(-out)} out`, 'wallet', '#F2C063', '#2B2312')}</section>
+    <section class="card pad" style="display:flex;flex-direction:column;gap:14px"><div style="display:flex;justify-content:space-between"><h2>Pipeline</h2><span class="sm mut2">intake → listed</span></div>
+      <div style="display:flex;height:12px;border-radius:999px;overflow:hidden;gap:3px;background:#1A2220">${tot ? pipe.map(([s, c]) => cnt(s) ? `<div style="flex:${cnt(s)};background:${c}"></div>` : '').join('') : ''}</div>
+      <div class="grid g-auto" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">${pipe.map(([s]) => `<a href="#/inventory" data-act="invTab" data-tab="${s}" style="display:flex;align-items:center;gap:10px;color:inherit">${chip(s)}<span class="mono">${cnt(s)}</span></a>`).join('')}</div></section>
+    <div class="cols"><section class="card col-main" style="gap:0;overflow:hidden"><div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px"><h2>Recent intakes</h2><a href="#/inventory" class="sm">View all</a></div>
+      ${recent.length ? `<div class="tblwrap"><table><thead><tr><th>Item</th><th>Customer</th><th>Bought</th><th>Status</th></tr></thead><tbody>${recent.map(i => `<tr class="click" data-act="open" data-code="${esc(i.code)}"><td><div class="cell-item">${catTile(i.category, 34, 9)}<div><div style="font-weight:500">${esc(i.title)}</div><div class="mono sm mut2" style="margin-top:3px">${esc(i.code)}</div></div></div></td><td>${esc(custName(i.customerId))}</td><td class="mono">${money0(i.cost)}</td><td>${chip(i.status)}</td></tr>`).join('')}</tbody></table></div>` : emptyState('No items yet. Start with your first intake.', '<a class="btn pri" href="#/intake">New Intake</a>')}</section>
+      <div class="col-side"><section class="card pad" style="display:flex;flex-direction:column;gap:10px"><h2 style="margin-bottom:4px">Quick actions</h2>
+        <a class="btn" style="height:48px;justify-content:space-between" href="#/intake">New intake${ic('right', 16)}</a><a class="btn" style="height:48px;justify-content:space-between" href="#/sell">Record a sale${ic('right', 16)}</a><button class="btn" style="height:48px;justify-content:space-between" data-act="txNew">Log transaction${ic('right', 16)}</button></section>
+        <section class="card pad" style="display:flex;flex-direction:column;gap:12px"><h2>Lead sources · 30 days</h2>${lead.map(([s, n]) => `<div style="display:flex;align-items:center;gap:10px;font-size:13px"><span class="mut" style="width:110px">${s}</span><div class="bar"><div style="width:${n / lmax * 100}%"></div></div><span class="mono" style="width:24px;text-align:right">${n}</span></div>`).join('')}</section></div></div>`;
+}
+const emptyState = (msg, btn = '') => `<div class="empty">${ic('box', 28, 1.4)}<div>${msg}</div>${btn}</div>`;
+const custName = id => (id && S.customers[id] && S.customers[id].name) || 'Walk-in';
+
+// ── INVENTORY ─────────────────────────────────────────────────────
+function itemMatch(i, q) { if (!q) return true; q = q.toLowerCase(); return [i.title, i.code, i.serial, i.specs, i.purchaseId, custName(i.customerId), i.bin].some(v => String(v || '').toLowerCase().includes(q)); }
+function pInventory() {
+  const U = S.ui.inv; const stock = itemsArr().filter(i => STOCK.includes(i.status));
+  const tabs = [['all', 'All'], ['new', 'New'], ['proc', 'Processing'], ['prep', 'Prepared'], ['list', 'Listed']];
+  const view = stock.filter(i => (U.tab === 'all' || i.status === U.tab) && itemMatch(i, U.q)).sort(byNewest);
+  const sum = view.reduce((a, i) => a + econ(i).margin, 0);
+  return head('Every unit you own, from intake to listing', 'Inventory Vault', `<button class="btn" data-act="csvItems">${ic('down', 16)}Export CSV</button><a class="btn pri" href="#/intake">${ic('plus', 16, 2.2)}New Intake</a>`) +
+    `<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" class="${U.tab === k ? 'on' : ''}" data-act="invTab" data-tab="${k}">${l}<b>${k === 'all' ? stock.length : stock.filter(i => i.status === k).length}</b></button>`).join('')}</div>
+    <label class="search">${ic('search', 16)}<input id="inv-q" type="search" placeholder="Model, customer, serial or VR code" data-bind="ui.inv.q" value="${esc(U.q)}" aria-label="Search inventory"></label></div>
+    <section class="card" style="overflow:hidden">${view.length ? `<div class="tblwrap"><table><thead><tr><th>Item / Customer</th><th>Source</th><th>Acquired</th><th class="r">Est. resale</th><th class="r">Est. profit</th><th>Location</th><th>Status</th></tr></thead><tbody>${view.map(i => { const d = daysSince(i.acquired); const e = econ(i); return `<tr class="click" data-act="open" data-code="${esc(i.code)}"><td><div class="cell-item">${catTile(i.category)}<div><div style="font-weight:500">${esc(i.title)}</div><div class="sm mut2" style="margin-top:3px"><span class="mono">${esc(i.code)}</span> · ${esc(custName(i.customerId))}</div></div></div></td><td class="mut">${esc(i.source || '—')}</td><td><div class="mono" style="font-size:13px">${fmtDate(i.acquired)}</div><div class="sm" style="margin-top:3px;color:${d > 14 ? '#F2C063' : '#8C9C95'}">${d === 0 ? 'Today' : d + (d === 1 ? ' day' : ' days') + ' in stock'}</div></td><td class="mono r">${money0(e.resale)}</td><td class="mono r ${e.margin >= 0 ? 'em' : 'cor'}">${money0(e.margin)}</td><td>${i.bin ? `<span class="bin">${esc(i.bin)}</span>` : '<span class="mut2">—</span>'}</td><td>${chip(i.status)}</td></tr>`; }).join('')}</tbody></table></div>
+    <div style="display:flex;justify-content:space-between;padding:14px 20px;border-top:1px solid var(--line);font-size:13px;flex-wrap:wrap;gap:8px" class="mut2"><span>Showing ${view.length} of ${stock.length} units</span><span>Est. profit in view <span class="mono" style="color:var(--tx)">${money0(sum)}</span></span></div>` : emptyState(stock.length ? 'No units match this filter.' : 'Nothing in stock yet.', stock.length ? '' : '<a class="btn pri" href="#/intake">New Intake</a>')}</section>`;
+}
+
+// ── MASTER VAULT ──────────────────────────────────────────────────
+function pMaster() {
+  const U = S.ui.master; const all = itemsArr();
+  const grp = s => STOCK.slice(0, 3).includes(s) ? 'stock' : s;
+  const tabs = [['all', 'All'], ['stock', 'In stock'], ['list', 'Listed'], ['sold', 'Sold'], ['arch', 'Archived']];
+  const view = all.filter(i => (U.tab === 'all' || grp(i.status) === U.tab) && (U.bin === 'all' || (i.bin || '') === (U.bin === '—' ? '' : U.bin)) && (U.cat === 'all' || i.category === U.cat) && itemMatch(i, U.q)).sort(byNewest);
+  const PER = 50; const pages = Math.max(1, Math.ceil(view.length / PER)); U.page = Math.min(U.page, pages - 1); const pageRows = view.slice(U.page * PER, U.page * PER + PER);
+  const sel = Object.keys(U.sel).filter(k => U.sel[k] && S.items[k]);
+  const soldAll = all.filter(i => i.status === 'sold'); const realized = soldAll.reduce((a, i) => a + econ(i).margin, 0);
+  const stat = (l, v, cls = '') => `<div class="card pad-s"><div class="sm mut2">${l}</div><div class="mono ${cls}" style="font-size:24px;margin-top:8px">${v}</div></div>`;
+  return head('The permanent record — stock, listed, sold and archived', 'Master Vault', `<button class="btn" data-act="csvItems">${ic('down', 16)}Export CSV</button><a class="btn pri" href="#/intake">${ic('plus', 16, 2.2)}Add item</a>`) +
+    `<section class="grid g-auto" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">${stat('Items recorded', all.length)}${stat('In storage now', all.filter(i => STOCK.includes(i.status)).length)}${stat('Sold, lifetime', soldAll.length)}${stat('Realized profit', money0(realized), 'em')}</section>
+    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div class="tabs">${tabs.map(([k, l]) => `<button class="${U.tab === k ? 'on' : ''}" data-act="mTab" data-tab="${k}">${l}<b>${k === 'all' ? all.length : all.filter(i => grp(i.status) === k).length}</b></button>`).join('')}</div>
+      <div class="acts"><select class="sel sm" id="m-bin" data-bind="ui.master.bin" aria-label="Location"><option value="all">All locations</option>${S.settings.bins.map(b => `<option ${U.bin === b ? 'selected' : ''}>${esc(b)}</option>`).join('')}<option value="—" ${U.bin === '—' ? 'selected' : ''}>No location</option></select>
+      <select class="sel sm" id="m-cat" data-bind="ui.master.cat" aria-label="Category"><option value="all">All categories</option>${Object.keys(CATS).map(c => `<option ${U.cat === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
+      <label class="search">${ic('search', 16)}<input id="m-q" type="search" placeholder="Model, VR/PU code, serial, bin" data-bind="ui.master.q" value="${esc(U.q)}" aria-label="Search"></label></div></div>
+    <section class="card" style="overflow:hidden">
+      ${sel.length ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#0F1F18;border-bottom:1px solid #1D3A2C;font-size:13px;flex-wrap:wrap"><span class="em">${sel.length} selected</span>
+        <select class="sel sm" id="bulk-bin" aria-label="Move to bin" style="height:32px"><option value="">Move to bin…</option>${S.settings.bins.map(b => `<option>${esc(b)}</option>`).join('')}</select><button class="btn sm" data-act="bulkBin">Move</button>
+        <select class="sel sm" id="bulk-st" aria-label="Change status" style="height:32px"><option value="">Set status…</option>${['new', 'proc', 'prep', 'list'].map(s => `<option value="${s}">${STATUS[s][0]}</option>`).join('')}</select><button class="btn sm" data-act="bulkStatus">Apply</button>
+        <button class="btn sm" data-act="bulkArchive">Archive</button><button class="btn sm" style="margin-left:auto" data-act="bulkClear">Clear</button></div>` : ''}
+      ${pageRows.length ? `<div class="tblwrap"><table><thead><tr><th><input type="checkbox" aria-label="Select page" data-act="selPage" ${pageRows.every(i => U.sel[i.code]) ? 'checked' : ''} style="accent-color:#3DDC97"></th><th>ID</th><th>Item</th><th>Cond.</th><th>Location</th><th>Status</th><th class="r">Cost</th><th class="r">Price / sold</th><th class="r">Profit</th><th>Channel</th><th>Added</th></tr></thead><tbody>
+      ${pageRows.map(i => { const e = econ(i); const arch = i.status === 'arch'; return `<tr><td><input type="checkbox" data-act="selOne" data-code="${esc(i.code)}" ${U.sel[i.code] ? 'checked' : ''} aria-label="Select ${esc(i.title)}" style="accent-color:#3DDC97"></td><td>${codeChip(i.code)}</td><td><a href="#/item/${encodeURIComponent(i.code)}" style="color:var(--tx);font-weight:500;display:flex;align-items:center;gap:10px">${catTile(i.category, 30, 8)}${esc(i.title)}</a></td><td class="mut">${esc(i.condition || '—')}</td><td>${i.bin ? `<span class="bin">${esc(i.bin)}</span>` : '<span class="mut2">—</span>'}</td><td>${chip(i.status)}</td><td class="mono r">${money0(i.cost)}</td><td class="mono r">${i.status === 'sold' && i.sale ? money0(i.sale.price) : num(i.resale) ? money0(i.resale) : '—'}</td><td class="mono r" style="color:${arch ? '#F2A08A' : e.realized ? '#5FE6AC' : '#9AA9A2'}">${arch ? money0(-num(i.cost)) : (e.realized ? '' : '≈ ') + money0(e.margin)}</td><td class="mut">${esc((i.sale && i.sale.channel) || '—')}</td><td class="mono mut2">${fmtShort(i.acquired)}</td></tr>`; }).join('')}</tbody></table></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-top:1px solid var(--line);font-size:13px;flex-wrap:wrap;gap:8px" class="mut2"><span>Showing ${pageRows.length} of ${view.length} · page ${U.page + 1} of ${pages}</span><div class="acts"><button class="btn sm" data-act="mPage" data-d="-1" ${U.page ? '' : 'disabled'} aria-label="Previous page">${ic('chevL', 16)}</button><button class="btn sm" data-act="mPage" data-d="1" ${U.page < pages - 1 ? '' : 'disabled'} aria-label="Next page">${ic('chevR', 16)}</button></div></div>` : emptyState(all.length ? 'No records match these filters.' : 'The Master Vault fills up as you record intakes.')}
+    </section>`;
+}
+
+// ── ITEM DETAIL (everything editable) ─────────────────────────────
+const ival = (it, f) => (S.ui.edit[it.code] && f in S.ui.edit[it.code]) ? S.ui.edit[it.code][f] : (f.includes('.') ? f.split('.').reduce((o, k) => (o || {})[k], it) : it[f]);
+const fIn = (it, f, label, o = {}) => `<div class="fld ${o.cls || ''}"><label for="if-${f.replace('.', '-')}">${o.icon ? `<span class="li ${o.req ? 'req' : ''}">${ic(o.icon, 14, 1.9)}</span>` : ''}${label}</label>${o.money ? '<div class="money"><span>$</span>' : ''}<input class="in ${o.mono || o.money ? 'mono' : ''}" id="if-${f.replace('.', '-')}" data-ifield="${f}" data-code="${esc(it.code)}" ${o.type ? `type="${o.type}"` : ''} ${o.money ? 'inputmode="decimal"' : ''} value="${esc(ival(it, f) ?? '')}" placeholder="${esc(o.ph || '')}">${o.money ? '</div>' : ''}</div>`;
+const fSel = (it, f, label, opts, o = {}) => `<div class="fld ${o.cls || ''}"><label for="if-${f}">${o.icon ? `<span class="li">${ic(o.icon, 14, 1.9)}</span>` : ''}${label}</label><select class="sel" id="if-${f}" data-ifield="${f}" data-code="${esc(it.code)}">${o.blank ? `<option value="">${o.blank}</option>` : ''}${opts.map(x => { const [v, l] = Array.isArray(x) ? x : [x, x]; return `<option value="${esc(v)}" ${String(ival(it, f) ?? '') === String(v) ? 'selected' : ''}>${esc(l)}</option>`; }).join('')}</select></div>`;
+function pItem() {
+  const it = S.items[S.route.arg];
+  if (!it) return head('', 'Item not found', '<a class="btn" href="#/master">Back to Master Vault</a>') + emptyState('This record does not exist or was removed.');
+  const e = econ(it); const pk = it.packet || {}; const photos = pk.photos || []; const st = it.status;
+  const nextSt = FLOW[FLOW.indexOf(st) + 1]; const hist = histFor(it.code);
+  const custOpts = [['', 'Walk-in / unknown']].concat(Object.values(S.customers).sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => [c.code, `${c.name || 'Unnamed'} · ${c.code}`]));
+  const sh = S.settings.shopify || {};
+  const up = S.uploads[it.code] || 0;
+  return `<a href="#/inventory" class="sm mut" style="display:inline-flex;align-items:center;gap:8px;align-self:flex-start">${ic('left', 16)}Back to Vault</a>
+  <header class="head"><div style="display:flex;flex-direction:column;gap:10px;min-width:0;flex:1 1 420px">
+    <div class="acts">${codeChip(it.code, false)}${it.purchaseId ? codeChip(it.purchaseId) : ''}${it.sale && it.sale.code ? codeChip(it.sale.code) : ''}${chip(st)}<span class="sm mut2">Bought ${fmtDate(it.acquired)} by ${esc(ownerName(it.by))}</span></div>
+    <input class="in" id="if-title" data-ifield="title" data-code="${esc(it.code)}" value="${esc(ival(it, 'title'))}" aria-label="Item title" style="font-size:28px;font-weight:600;letter-spacing:-.8px;height:auto;padding:4px 8px;margin-left:-9px;background:transparent;border-color:transparent">
+  </div><div class="acts">
+    ${st !== 'sold' && st !== 'arch' ? `<a class="btn" href="#/sell/${encodeURIComponent(it.code)}">${ic('cash', 16)}Record sale</a>` : ''}
+    ${st === 'arch' ? `<button class="btn" data-act="unarchive" data-code="${esc(it.code)}">Restore to stock</button>` : st !== 'sold' ? `<button class="btn" data-act="archive" data-code="${esc(it.code)}">Archive</button>` : ''}
+    ${nextSt && nextSt !== 'sold' && st !== 'arch' ? `<button class="btn pri" data-act="advance" data-code="${esc(it.code)}">Advance to ${STATUS[nextSt][0]}${ic('right', 16, 2)}</button>` : ''}
+  </div></header>
+  <div class="cols"><div class="col-main">
+    <section class="card pad" style="display:flex;flex-direction:column;gap:18px"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Details</h2><span class="sm mut2">Changes save automatically</span></div>
+      <div class="grid g2 stack">${fSel(it, 'category', 'Category', Object.keys(CATS), { icon: 'grid' })}${fSel(it, 'condition', 'Condition', Object.keys(CONDS), { icon: 'star' })}
+      ${fIn(it, 'specs', 'Storage / color / specs', { icon: 'chip' })}${fIn(it, 'serial', 'Serial / IMEI', { icon: 'barcode', mono: 1 })}
+      ${fSel(it, 'status', 'Status', Object.keys(STATUS).map(k => [k, STATUS[k][0]]), { icon: 'layers' })}${fSel(it, 'bin', 'Storage location', S.settings.bins, { icon: 'pin', blank: 'No location' })}
+      ${fSel(it, 'customerId', 'Seller', custOpts, { icon: 'users' })}${fSel(it, 'source', 'Lead source', SOURCES, { icon: 'link' })}
+      ${fIn(it, 'acquired', 'Date acquired', { type: 'date', icon: 'book' })}${fIn(it, 'confidence', 'Confidence score (0–100)', { icon: 'check', mono: 1 })}</div>
+      <div class="fld"><label for="if-defect"><span class="li req">${ic('warn', 14, 1.9)}</span>Plain-English defect description <em>*</em></label><textarea class="ta" id="if-defect" data-ifield="defect" data-code="${esc(it.code)}" rows="3">${esc(ival(it, 'defect') || '')}</textarea></div>
+      <div class="fld"><label for="if-notes"><span class="li">${ic('edit', 14, 1.9)}</span>Internal notes <span class="opt">optional</span></label><textarea class="ta" id="if-notes" data-ifield="notes" data-code="${esc(it.code)}" rows="2">${esc(ival(it, 'notes') || '')}</textarea></div>
+    </section>
+    ${packetCard(it, pk, photos, up, sh)}
+    ${it.sale && it.sale.code ? saleCard(it) : ''}
+  </div><div class="col-side">
+    <section class="card pad" style="display:flex;flex-direction:column"><h2 style="margin-bottom:10px">${e.realized ? 'Realized economics' : 'Projected economics'}</h2>
+      <div class="grid g2" style="gap:12px;margin-bottom:8px">${fIn(it, 'resale', 'Expected resale', { money: 1, icon: 'trend', req: 1 })}${fIn(it, 'cost', 'Purchase cost', { money: 1, icon: 'wallet', req: 1 })}</div>
+      <div class="row"><span class="mut">${e.realized ? 'Fees + shipping (actual)' : `Fees + shipping (${S.settings.feePct}% + $${S.settings.shipFlat})`}</span><span class="mono cor">${money(-e.fees)}</span></div>
+      ${e.realized ? '' : `<div class="row"><span class="mut">Risk allowance (${S.settings.riskPct}%)</span><span class="mono cor">${money(-e.risk)}</span></div>`}
+      <div class="row"><span class="mut">Purchase cost</span><span class="mono cor">${money(-e.cost)}</span></div>
+      <div class="glow" style="margin-top:14px;padding:16px;display:flex;justify-content:space-between;align-items:baseline"><span style="color:#9EE7BC">${e.realized ? 'Net profit' : 'Est. margin'}</span><span class="mono" style="font-size:26px;color:${e.margin >= 0 ? '#5FE6AC' : '#F2A08A'}">${money(e.margin)}</span></div>
+      <div class="sm mut2" style="display:flex;justify-content:space-between;margin-top:10px"><span>ROI on cost</span><span class="mono" style="color:var(--tx2)">${e.cost ? (e.margin / e.cost * 100).toFixed(1) + '%' : '—'}</span></div></section>
+    <section class="card pad" style="display:flex;flex-direction:column;gap:14px"><h2>Status</h2>
+      <ol style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px;font-size:14px">${FLOW.map((s, i) => { const idx = FLOW.indexOf(st); const done = st !== 'arch' && i < idx || st === 'sold'; const cur = s === st; return `<li style="display:flex;gap:12px;align-items:center;${!done && !cur ? 'color:#8C9C95' : ''}"><span style="width:22px;height:22px;border-radius:50%;display:grid;place-items:center;${done && !cur ? 'background:#3DDC97;color:#06120D' : cur ? 'border:2px solid #F2C063' : 'border:2px solid #2A3632'}">${done && !cur ? ic('check', 12, 3) : cur ? '<span style="width:8px;height:8px;border-radius:50%;background:#F2C063"></span>' : ''}</span>${STATUS[s][0]}</li>`; }).join('')}${st === 'arch' ? `<li style="display:flex;gap:12px;align-items:center">${chip('arch')}</li>` : ''}</ol></section>
+    <section class="card pad" style="display:flex;flex-direction:column;gap:10px"><h2>History</h2>${hist.length ? hist.slice(0, 12).map(h => `<div style="display:flex;gap:10px;font-size:13px;line-height:1.45"><span class="av" style="width:22px;height:22px;font-size:10px;background:${(OWNER_COLORS[h.by] || ['#1F2725', '#9AA9A2'])[0]};color:${(OWNER_COLORS[h.by] || ['', '#06120D'])[1]}">${h.by === 'o1' ? 1 : h.by === 'o2' ? 2 : 'S'}</span><div><span style="font-weight:600">${esc(ownerName(h.by))}</span> <span class="mut">${esc(h.verb)}</span>${h.from || h.to ? ` <span class="mut2">${esc(h.from)} → ${esc(h.to)}</span>` : ''}<div class="sm mut2">${new Date(h.t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div></div></div>`).join('') : '<div class="sm mut2">No recorded actions yet.</div>'}</section>
+  </div></div>`;
+}
+function packetCard(it, pk, photos, up, sh) {
+  const tiles = photos.map((id, i) => `<div class="ph">${i === 0 ? '<span class="cover">Cover</span>' : ''}<img src="${esc(photoUrl(id))}" alt="Photo ${i + 1}" loading="lazy" onerror="this.style.opacity=.2"><div class="tools"><button data-act="phMove" data-code="${esc(it.code)}" data-i="${i}" data-d="-1" aria-label="Move left">${ic('chevL', 14)}</button>${i ? `<button data-act="phCover" data-code="${esc(it.code)}" data-i="${i}" aria-label="Make cover" title="Make cover">${ic('star', 14)}</button>` : ''}<button data-act="phDel" data-code="${esc(it.code)}" data-i="${i}" aria-label="Remove photo">${ic('trash', 14)}</button><button data-act="phMove" data-code="${esc(it.code)}" data-i="${i}" data-d="1" aria-label="Move right">${ic('chevR', 14)}</button></div></div>`).join('');
+  const busy = Array.from({ length: up }, () => `<div class="ph" style="display:grid;place-items:center"><span class="sm mut">Uploading…</span></div>`).join('');
+  const canUp = !!S.assets;
+  const drop = photos.length + up < 12 ? (canUp ? `<label class="drop" data-drop="${esc(it.code)}">${ic('photo', 22)}<span>＋ Add photos<br><span class="mut2">or drop here</span></span><input type="file" accept="image/jpeg,image/png,image/webp" multiple data-upload="${esc(it.code)}" style="display:none"></label>` : `<div class="drop" style="cursor:default">${ic('lock', 18)}<span class="mut2">Uploads need edit access</span></div>`) : '';
+  const connected = sh.mode === 'relay' && sh.relayUrl;
+  return `<section class="card pad" style="display:flex;flex-direction:column;gap:18px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><h2>Shopify listing packet ${pk.code ? codeChip(pk.code) : ''}</h2><div class="sm mut2" style="margin-top:4px">JPEG, PNG or WebP · up to 12 photos · large photos are resized automatically</div></div>
+      <span style="font-size:11px;font-weight:600;letter-spacing:1.4px;color:${pk.shopifyId ? '#5FE6AC' : '#F2C063'};padding:5px 10px;border-radius:6px;background:${pk.shopifyId ? '#0F2A1F' : '#2B2312'}">${pk.shopifyId ? 'DRAFT CREATED' : 'DRAFT ONLY'}</span></div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px">${tiles}${busy}${drop}</div>
+    <div class="grid g4" style="gap:14px">${fIn(it, 'packet.title', 'Listing title', { cls: 'span3', icon: 'tag', ph: it.title })}${fIn(it, 'packet.price', 'Price', { money: 1, icon: 'cash', ph: it.resale })}
+      <div class="fld spanall"><label for="if-packet-description"><span class="li">${ic('book', 14, 1.9)}</span>Listing description</label><textarea class="ta" id="if-packet-description" data-ifield="packet.description" data-code="${esc(it.code)}" rows="4" placeholder="Condition, what's included, testing notes…">${esc(ival(it, 'packet.description') || '')}</textarea></div></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:16px">
+      <span class="sm mut2">${connected ? `Connected store: ${esc(sh.store || 'custom relay')}` : 'No Shopify store connected — export works with any store. <a href="#/settings">Connect one</a>'}</span>
+      <div class="acts"><button class="btn" data-act="pkZip" data-code="${esc(it.code)}">${ic('down', 16)}Photos (.zip)</button><button class="btn" data-act="pkCsv" data-code="${esc(it.code)}">${ic('down', 16)}Shopify CSV</button>
+      ${connected ? `<button class="btn pri" data-act="pkPush" data-code="${esc(it.code)}">${ic('shop', 16)}${pk.shopifyId ? 'Update Shopify draft' : 'Create Shopify draft'}</button>` : ''}${pk.shopifyUrl ? `<a class="btn" href="${esc(pk.shopifyUrl)}" target="_blank" rel="noopener">Open in Shopify ↗</a>` : ''}</div></div></section>`;
+}
+function saleCard(it) {
+  const s = it.sale;
+  return `<section class="card pad" style="display:flex;flex-direction:column;gap:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Sale ${s.code ? codeChip(s.code) : ''}</h2><span class="sm mut2">Edit any field — totals update</span></div>
+    <div class="grid g3 stack">${fSel(it, 'sale.channel', 'Channel', Object.keys(CHANNELS))}${fIn(it, 'sale.date', 'Sale date', { type: 'date' })}${fIn(it, 'sale.price', 'Sale price', { money: 1 })}${fIn(it, 'sale.fees', 'Marketplace fees', { money: 1 })}${fIn(it, 'sale.ship', 'Shipping cost', { money: 1 })}${fIn(it, 'sale.buyer', 'Buyer')}${fIn(it, 'sale.order', 'Order number', { mono: 1 })}${fIn(it, 'sale.tracking', 'Tracking', { mono: 1, cls: 'span2' })}</div>
+    <div class="acts"><button class="btn danger" data-act="returnSale" data-code="${esc(it.code)}">Process a return</button></div></section>`;
+}
+function histFor(code) { const out = []; Object.values(S.activity).forEach(ch => (ch.entries || []).forEach(e => { if (e.code === code || (e.links || []).includes(code)) out.push(e); })); return out.sort((a, b) => b.t.localeCompare(a.t)); }
+
+// ── INTAKE (3 steps) ──────────────────────────────────────────────
+const blankForm = cat => ({ category: cat || 'Smartphone', title: '', specs: '', serial: '', condition: 'Good', defect: '', qty: 1, cost: '', resale: '' });
+const newIntake = () => ({ step: 1, multi: false, by: S.owner || 'o1', items: [], f: blankForm(), custMode: 'new', custQ: '', customerId: null, c: { name: '', phone: '', email: '', source: 'Walk-in' }, method: 'Zelle', date: localISO(), ref: '', confirm: false, busy: false, err: '' });
+function validItem(f) {
+  if (!f.title.trim()) return 'Enter the item brand and model.';
+  if (!f.defect.trim()) return 'Add a plain-English defect description (write "None found" if it is clean).';
+  if (!(num(f.cost) > 0)) return 'Enter a valid purchase price.';
+  if (!(num(f.resale) > 0)) return 'Enter a valid expected resale price.';
+  const q = Math.round(num(f.qty)); if (q < 1 || q > 100) return 'Quantity must be a whole number from 1 to 100.';
+  if (f.serial.trim() && q > 1) return 'Serialized devices must be added individually.';
+  return '';
+}
+const reqLabel = (id, label, icon, req, extra = '') => `<label for="${id}"><span class="li ${req ? 'req' : ''}">${ic(icon, 14, 1.9)}</span>${label}${req ? ' <em>*</em>' : ''}${extra}</label>`;
+function pIntake() {
+  const N = S.ui.intake || (S.ui.intake = newIntake()); const f = N.f;
+  const steps = ['Items', 'Customer', 'Payment'].map((l, i) => `<li class="${N.step === i + 1 ? 'on' : N.step > i + 1 ? 'done' : ''}"><span class="n">${N.step > i + 1 ? ic('check', 12, 3) : i + 1}</span>${l}</li>${i < 2 ? '<li class="ln" aria-hidden="true"></li>' : ''}`).join('');
+  const total = N.items.reduce((a, x) => a + num(x.cost) * Math.round(num(x.qty) || 1), 0);
+  const resale = N.items.reduce((a, x) => a + num(x.resale) * Math.round(num(x.qty) || 1), 0);
+  const units = N.items.reduce((a, x) => a + Math.round(num(x.qty) || 1), 0);
+  const cart = `<aside class="card pad col-side" style="gap:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Cart</h2><span class="sm mut2">${units} unit${units === 1 ? '' : 's'}</span></div>
+    ${N.items.length ? N.items.map((x, i) => `<div style="display:flex;gap:12px;align-items:flex-start;padding:12px;border-radius:12px;background:var(--card2);border:1px solid var(--line)">${catTile(x.category, 34, 9)}<div style="flex-grow:1;min-width:0"><div style="font-weight:500;font-size:14px">${esc(x.title)}</div><div class="sm mut2" style="margin-top:3px">${esc(x.condition)} · ${Math.round(num(x.qty))} × <span class="mono">${money0(x.cost)}</span></div></div>${N.step === 1 ? `<button class="btn ic sm" style="width:30px;height:30px" data-act="cartDel" data-i="${i}" aria-label="Remove ${esc(x.title)}">${ic('x', 14)}</button>` : ''}</div>`).join('') : '<div class="sm mut2" style="padding:12px;border:1px dashed #2A3632;border-radius:12px;text-align:center">The item in the form is added when you continue.</div>'}
+    <div style="display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:14px;font-size:14px"><div style="display:flex;justify-content:space-between"><span class="mut">Total purchase</span><span class="mono">${money(total)}</span></div><div style="display:flex;justify-content:space-between"><span class="mut">Expected resale</span><span class="mono">${money(resale)}</span></div>
+    <div class="glow" style="padding:14px;display:flex;justify-content:space-between;align-items:baseline;margin-top:6px"><span style="color:#9EE7BC">${N.step === 3 ? 'Pay the customer' : 'Gross spread'}</span><span class="mono" style="font-size:22px;color:#5FE6AC">${money(N.step === 3 ? total : resale - total)}</span></div></div>
+    ${N.err ? `<div class="notice bad">${esc(N.err)}</div>` : ''}
+    ${N.step === 1 ? `<button class="btn pri lg" data-act="inNext">Next: Customer info${ic('right', 16, 2)}</button>` : N.step === 2 ? `<button class="btn pri lg" data-act="inNext">Next: Payment${ic('right', 16, 2)}</button><button class="btn" data-act="inBack">Back</button>` : `<button class="btn pri lg" data-act="inDone" ${N.busy ? 'disabled' : ''}>${N.busy ? 'Saving purchase…' : 'Complete Purchase'}</button><button class="btn" data-act="inBack">Back</button>`}
+    <button class="btn" style="border:0;background:transparent;box-shadow:none" data-act="inCancel">Cancel</button></aside>`;
+  let body = '';
+  if (N.step === 1) {
+    body = `<div class="seg" style="align-self:flex-start"><button class="${!N.multi ? 'on' : ''}" data-act="inMulti" data-v="0">Single device</button><button class="${N.multi ? 'on' : ''}" data-act="inMulti" data-v="1">Add multiple items to one purchase</button></div>
+    <section class="card pad" style="display:flex;flex-direction:column;gap:20px"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h2>Device information</h2><span class="sm mut2" style="display:inline-flex;align-items:center;gap:6px"><span class="li req" style="width:16px;height:16px;border-radius:5px"></span>green icon = required</span></div>
+      <div class="grid g2 stack"><div class="fld">${reqLabel('n-cat', 'Category', 'grid')}<select class="sel" id="n-cat" data-bind="ui.intake.f.category">${Object.keys(CATS).map(c => `<option ${f.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+      <div class="fld">${reqLabel('n-title', 'Brand &amp; model', 'gem', 1)}<input class="in" id="n-title" data-bind="ui.intake.f.title" value="${esc(f.title)}" placeholder="e.g. Apple iPhone 14 Pro"></div>
+      <div class="fld">${reqLabel('n-specs', 'Storage / color / specs', 'chip')}<input class="in" id="n-specs" data-bind="ui.intake.f.specs" value="${esc(f.specs)}" placeholder="128GB · Midnight"></div>
+      <div class="fld">${reqLabel('n-serial', 'Serial / IMEI', 'barcode', 0, ' <span class="opt">optional</span>')}<input class="in mono" id="n-serial" data-bind="ui.intake.f.serial" value="${esc(f.serial)}" placeholder="Scan or type"></div></div>
+      <div class="fld"><div class="lb"><span class="li">${ic('star', 14, 1.9)}</span>Condition</div><div class="seg" role="radiogroup" aria-label="Condition">${Object.entries(CONDS).map(([c, col]) => `<button class="${f.condition === c ? 'on' : ''}" data-act="inCond" data-v="${c}"><i class="cd" style="background:${col}"></i>${c}</button>`).join('')}</div></div>
+      <div class="fld">${reqLabel('n-defect', 'Plain-English defect description', 'warn', 1)}<textarea class="ta" id="n-defect" data-bind="ui.intake.f.defect" rows="3" placeholder="Scratches, battery health, anything not working…">${esc(f.defect)}</textarea></div>
+      <div class="grid g3 stack">${N.multi ? `<div class="fld">${reqLabel('n-qty', 'Quantity', 'layers')}<input class="in mono" id="n-qty" inputmode="numeric" data-bind="ui.intake.f.qty" value="${esc(f.qty)}"></div>` : ''}
+      <div class="fld">${reqLabel('n-cost', 'Purchase price per item', 'wallet', 1)}<div class="money"><span>$</span><input class="in" id="n-cost" inputmode="decimal" data-bind="ui.intake.f.cost" value="${esc(f.cost)}" placeholder="0.00"></div></div>
+      <div class="fld">${reqLabel('n-resale', 'Expected resale per item', 'trend', 1)}<div class="money"><span>$</span><input class="in" id="n-resale" inputmode="decimal" data-bind="ui.intake.f.resale" value="${esc(f.resale)}" placeholder="0.00"></div></div></div>
+      ${N.multi ? `<div style="display:flex;justify-content:flex-end;border-top:1px solid var(--line);padding-top:18px"><button class="btn" data-act="inAdd">${ic('plus', 16, 2.2)}Add item to purchase</button></div>` : ''}</section>`;
+  } else if (N.step === 2) {
+    const q = N.custQ.toLowerCase(); const list = Object.values(S.customers).filter(c => !q || [c.name, c.phone, c.email, c.code].some(v => String(v || '').toLowerCase().includes(q))).slice(0, 8);
+    const digits = s => String(s || '').replace(/\D/g, ''); const dup = N.custMode === 'new' && digits(N.c.phone).length >= 7 ? Object.values(S.customers).find(c => digits(c.phone) === digits(N.c.phone)) : null;
+    body = `<div class="seg" style="align-self:flex-start"><button class="${N.custMode === 'existing' ? 'on' : ''}" data-act="inCust" data-v="existing">Returning customer</button><button class="${N.custMode === 'new' ? 'on' : ''}" data-act="inCust" data-v="new">New customer</button></div>` +
+      (N.custMode === 'existing' ? `<section class="card pad" style="display:flex;flex-direction:column;gap:14px"><h2>Find a customer</h2><label class="search" style="flex:none;max-width:none">${ic('search', 16)}<input id="n-cq" type="search" data-bind="ui.intake.custQ" value="${esc(N.custQ)}" placeholder="Name, phone, email or CU code"></label>
+        ${list.length ? list.map(c => `<button class="pickrow ${N.customerId === c.code ? 'on' : ''}" data-act="inPickCust" data-code="${esc(c.code)}"><span class="av mono" style="width:36px;height:36px;font-size:12px;background:#1C2622">CU</span><span style="flex-grow:1"><span style="display:block;font-weight:500">${esc(c.name)}</span><span class="sm mut2">${esc(c.phone || '')} · ${esc(c.code)}</span></span>${N.customerId === c.code ? `<span class="em">${ic('check', 18, 2.4)}</span>` : ''}</button>`).join('') : '<div class="sm mut2">No matching customers. Switch to “New customer”.</div>'}</section>`
+        : `<section class="card pad" style="display:flex;flex-direction:column;gap:18px"><div style="display:flex;justify-content:space-between"><h2>Customer details</h2><span class="sm mut2">green icon = required</span></div>
+        <div class="grid g2 stack"><div class="fld">${reqLabel('n-cn', 'Full name', 'users', 1)}<input class="in" id="n-cn" data-bind="ui.intake.c.name" value="${esc(N.c.name)}"></div><div class="fld">${reqLabel('n-cp', 'Phone number', 'cash', 1)}<input class="in mono" id="n-cp" inputmode="tel" data-bind="ui.intake.c.phone" value="${esc(N.c.phone)}"></div>
+        <div class="fld span2">${reqLabel('n-ce', 'Email address', 'link', 0, ' <span class="opt">optional</span>')}<input class="in" id="n-ce" type="email" data-bind="ui.intake.c.email" value="${esc(N.c.email)}"></div></div>
+        <div class="fld"><div class="lb"><span class="li">${ic('trend', 14, 1.9)}</span>How did they find us?</div><div class="seg">${SOURCES.map(s => `<button class="${N.c.source === s ? 'on' : ''}" data-act="inSrc" data-v="${s}">${s}</button>`).join('')}</div></div></section>
+        ${dup ? `<div class="notice">${ic('warn', 18)}<div style="flex-grow:1"><b>This phone number is already in the Customer Vault</b> — ${esc(dup.name)} (${esc(dup.code)}). Use the existing contact to keep their history together.</div><button class="btn sm" data-act="inPickCust" data-code="${esc(dup.code)}">Use contact</button></div>` : ''}`);
+  } else {
+    const cust = N.customerId ? S.customers[N.customerId] : N.c;
+    body = `<section class="card pad" style="display:flex;flex-direction:column;gap:18px"><h2>How was the customer paid?</h2>
+      <div class="grid g4">${PAY.map(m => `<button class="pickrow ${N.method === m ? 'on' : ''}" style="flex-direction:column;align-items:flex-start" data-act="inPay" data-v="${m}">${ic(m === 'Cash' ? 'cash' : m === 'Other' ? 'plus' : 'sync', 20)}<span style="font-weight:600">${m}</span></button>`).join('')}</div>
+      <div class="grid g2 stack"><div class="fld"><label for="n-date">Purchase date</label><input class="in" id="n-date" type="date" data-bind="ui.intake.date" value="${esc(N.date)}"></div><div class="fld"><label for="n-ref">Payment reference <span class="opt">optional</span></label><input class="in mono" id="n-ref" data-bind="ui.intake.ref" value="${esc(N.ref)}" placeholder="Confirmation #"></div></div>
+      <label style="display:flex;gap:12px;align-items:flex-start;font-size:13px;line-height:1.5" class="mut"><input type="checkbox" data-act="inConfirm" ${N.confirm ? 'checked' : ''} style="width:18px;height:18px;accent-color:#3DDC97;margin-top:1px">Customer confirmed they own these devices and they are not reported lost or stolen.</label></section>
+      <section class="card pad"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><h2>Review</h2><button class="btn sm" data-act="inGo" data-v="1">Edit items</button></div>
+      ${N.items.map(x => `<div class="row"><span><b style="font-weight:500">${esc(x.title)}</b><span class="mut2"> · ${esc(x.condition)}${Math.round(num(x.qty)) > 1 ? ' · ×' + Math.round(num(x.qty)) : ''}</span></span><span class="mono">${money(num(x.cost) * Math.round(num(x.qty)))}</span></div>`).join('')}
+      <div class="row"><span class="mut">Customer</span><span>${esc((cust && cust.name) || '—')} · ${esc((cust && cust.phone) || '')}</span></div><div class="row"><span class="mut">Purchased by</span><span>${esc(ownerName(N.by))}</span></div></section>`;
+  }
+  return `<header class="head"><div><div class="sm mut2" style="font-size:13px">Record the customer, item and purchase together.</div><h1>New Purchase</h1></div><div class="acts"><ol class="steps" aria-label="Purchase progress">${steps}</ol>
+    <div class="seg" style="padding:3px" aria-label="Purchased by">${['o1', 'o2'].map(o => `<button class="${N.by === o ? 'on' : ''}" style="height:32px" data-act="inBy" data-v="${o}">${esc(ownerName(o))}</button>`).join('')}</div></div></header>
+    <div class="cols"><div class="col-main">${body}</div>${cart}</div>`;
+}
+
+// ── RECORD A SALE ─────────────────────────────────────────────────
+function newSale(code) { const it = S.items[code]; const price = it ? num((it.packet && it.packet.price) || it.resale) : 0; const s = { code: it ? code : '', channel: 'eBay', price: price ? price.toFixed(2) : '', fees: '', feesTouched: false, ship: String(S.settings.shipFlat || 0), date: localISO(), order: '', tracking: '', buyer: '', busy: false, err: '' }; autoFees(s); return s; }
+function autoFees(s) { if (s.feesTouched) return; const p = num(s.price); s.fees = s.channel === 'eBay' ? (p * (+S.settings.feePct || 0) / 100).toFixed(2) : s.channel === 'Shopify' ? (p ? (p * 0.029 + 0.3).toFixed(2) : '0.00') : s.channel === 'Local' ? '0.00' : s.fees; }
+function pSell() {
+  const s = S.ui.sale || (S.ui.sale = newSale(S.route.arg)); const it = S.items[s.code];
+  const avail = itemsArr().filter(i => STOCK.includes(i.status)).sort(byNewest);
+  const net = it ? num(s.price) - num(s.fees) - num(s.ship) - num(it.cost) : 0; const proj = it ? econ(it).margin : 0;
+  return `<a href="${it ? '#/item/' + encodeURIComponent(it.code) : '#/inventory'}" class="sm mut" style="display:inline-flex;align-items:center;gap:8px;align-self:flex-start">${ic('left', 16)}Back</a>` + head('Close out a unit and book the profit', 'Record a sale') +
+    `<div class="cols"><div class="col-main">
+      <section class="card pad" style="display:flex;flex-direction:column;gap:12px"><div class="fld"><label for="s-item">Item being sold</label><select class="sel" id="s-item" data-bind="ui.sale.code"><option value="">Choose an item in stock…</option>${avail.map(i => `<option value="${esc(i.code)}" ${s.code === i.code ? 'selected' : ''}>${esc(i.code)} · ${esc(i.title)}</option>`).join('')}</select></div>
+      ${it ? `<div style="display:flex;align-items:center;gap:14px">${catTile(it.category, 48, 12)}<div><div style="font-weight:600">${esc(it.title)}</div><div class="sm mut2" style="margin-top:3px"><span class="mono">${esc(it.code)}</span> · ${esc(it.condition)} · bought for <span class="mono">${money(it.cost)}</span>${it.bin ? ` · bin <span class="mono">${esc(it.bin)}</span>` : ''}</div></div></div>` : ''}</section>
+      <section class="card pad" style="display:flex;flex-direction:column;gap:18px"><h2>Where did it sell?</h2>
+        <div class="grid g4">${Object.entries(CHANNELS).map(([c, d]) => `<button class="pickrow ${s.channel === c ? 'on' : ''}" style="flex-direction:column;align-items:flex-start;gap:4px" data-act="sChan" data-v="${c}"><span style="font-weight:600">${c}</span><span class="sm mut2">${d}</span></button>`).join('')}</div>
+        <div class="grid g3 stack"><div class="fld"><label for="s-price">Sale price <em>*</em></label><div class="money"><span>$</span><input class="in" id="s-price" inputmode="decimal" data-bind="ui.sale.price" value="${esc(s.price)}"></div></div>
+        <div class="fld"><label for="s-fees">Marketplace fees</label><div class="money"><span>$</span><input class="in" id="s-fees" inputmode="decimal" data-bind="ui.sale.fees" data-touch="1" value="${esc(s.fees)}"></div></div>
+        <div class="fld"><label for="s-ship">Shipping cost</label><div class="money"><span>$</span><input class="in" id="s-ship" inputmode="decimal" data-bind="ui.sale.ship" value="${esc(s.ship)}"></div></div>
+        <div class="fld"><label for="s-date">Sale date</label><input class="in" id="s-date" type="date" data-bind="ui.sale.date" value="${esc(s.date)}"></div>
+        <div class="fld"><label for="s-order">Order number</label><input class="in mono" id="s-order" data-bind="ui.sale.order" value="${esc(s.order)}"></div>
+        <div class="fld"><label for="s-tr">Tracking</label><input class="in mono" id="s-tr" data-bind="ui.sale.tracking" value="${esc(s.tracking)}"></div>
+        <div class="fld span3"><label for="s-buyer">Buyer <span class="opt">optional</span></label><input class="in" id="s-buyer" data-bind="ui.sale.buyer" value="${esc(s.buyer)}" placeholder="Name or marketplace username"></div></div></section></div>
+    <aside class="card pad col-side" style="gap:0"><h2 style="margin-bottom:8px">Realized profit</h2>
+      <div class="row"><span class="mut">Sale price</span><span class="mono">${money(s.price)}</span></div><div class="row"><span class="mut">Marketplace fees</span><span class="mono cor">${money(-num(s.fees))}</span></div><div class="row"><span class="mut">Shipping</span><span class="mono cor">${money(-num(s.ship))}</span></div><div class="row"><span class="mut">Purchase cost</span><span class="mono cor">${money(-(it ? num(it.cost) : 0))}</span></div>
+      <div class="glow" style="margin-top:16px;padding:16px;display:flex;justify-content:space-between;align-items:baseline"><span style="color:#9EE7BC">Net profit</span><span class="mono" style="font-size:26px;color:${net >= 0 ? '#5FE6AC' : '#F2A08A'}">${money(net)}</span></div>
+      ${it ? `<div class="sm mut2" style="display:flex;justify-content:space-between;margin-top:10px"><span>vs. projected ${money(proj)}</span><span class="mono ${net - proj >= 0 ? 'em' : 'cor'}">${money(net - proj, 1)}</span></div>` : ''}
+      <p class="sm mut2" style="margin:16px 0 0;line-height:1.5">Saving marks the item Sold, moves it out of the Inventory Vault and logs the payout in Bookkeeping.</p>
+      ${s.err ? `<div class="notice bad" style="margin-top:12px">${esc(s.err)}</div>` : ''}
+      <button class="btn pri lg full" style="margin-top:16px" data-act="sSave" ${s.busy ? 'disabled' : ''}>${s.busy ? 'Saving…' : 'Save sale'}</button></aside></div>`;
+}
+
+// ── CUSTOMERS ─────────────────────────────────────────────────────
+function pCustomers() {
+  const U = S.ui.cust; const all = Object.values(S.customers);
+  const deals = c => Object.values(S.purchases).filter(p => p.customerId === c.code);
+  const q = U.q.toLowerCase(); const view = all.filter(c => (U.src === 'all' || c.source === U.src) && (!q || [c.name, c.phone, c.email, c.code].some(v => String(v || '').toLowerCase().includes(q)))).sort((a, b) => (b.lastDeal || b.createdAt || '').localeCompare(a.lastDeal || a.createdAt || ''));
+  const sel = S.customers[U.sel] || null;
+  const cf = (c, f, l, o = {}) => `<div class="fld ${o.cls || ''}"><label for="cf-${f}">${l}</label>${o.ta ? `<textarea class="ta" id="cf-${f}" data-cfield="${f}" data-code="${esc(c.code)}" rows="3">${esc(c[f] || '')}</textarea>` : `<input class="in ${o.mono ? 'mono' : ''}" id="cf-${f}" data-cfield="${f}" data-code="${esc(c.code)}" value="${esc(c[f] || '')}">`}</div>`;
+  const panel = sel ? (() => { const ds = deals(sel); const paid = ds.reduce((a, p) => a + num(p.total), 0); const its = itemsArr().filter(i => i.customerId === sel.code); return `<aside class="card pad col-side" style="gap:16px" aria-label="Selected customer">
+    <div style="display:flex;align-items:center;gap:14px"><span class="av mono" style="width:52px;height:52px;background:#3DDC97;color:#06120D;font-size:13px">CU</span><div style="min-width:0"><div style="font-size:18px;font-weight:600">${esc(sel.name || 'Unnamed')}</div><div class="sm mut2">${codeChip(sel.code, false)} · since ${fmtDate((sel.createdAt || '').slice(0, 10))}</div></div></div>
+    <div class="grid g2" style="gap:10px"><div class="card pad-s" style="background:var(--card2)"><div class="sm mut2">Deals</div><div class="mono" style="font-size:22px;margin-top:6px">${ds.length}</div></div><div class="card pad-s" style="background:var(--card2)"><div class="sm mut2">Paid out</div><div class="mono" style="font-size:22px;margin-top:6px">${money0(paid)}</div></div></div>
+    ${cf(sel, 'name', 'Full name')}${cf(sel, 'phone', 'Phone', { mono: 1 })}${cf(sel, 'email', 'Email')}
+    <div class="fld"><label for="cf-source">Lead source</label><select class="sel" id="cf-source" data-cfield="source" data-code="${esc(sel.code)}">${SOURCES.map(s => `<option ${sel.source === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+    ${cf(sel, 'notes', 'Notes', { ta: 1 })}
+    <div style="display:flex;flex-direction:column;gap:8px"><div style="font-size:13px;font-weight:600">Items bought from them</div>${its.length ? its.sort(byNewest).map(i => `<a href="#/item/${encodeURIComponent(i.code)}" class="pickrow" style="justify-content:space-between">${catTile(i.category, 28, 8)}<span style="flex-grow:1;font-size:13px">${esc(i.title)} <span class="mono mut2">· ${esc(i.code)}</span></span><span class="mono" style="font-size:13px">${money0(i.cost)}</span></a>`).join('') : '<div class="sm mut2">No items yet.</div>'}</div>
+    <button class="btn pri" data-act="custIntake" data-code="${esc(sel.code)}">Start purchase with this customer</button></aside>`; })() : `<aside class="card pad col-side"><div class="empty" style="padding:24px">${ic('users', 26, 1.4)}<div>Select a customer to see and edit their details.</div></div></aside>`;
+  return head('Everyone you have bought from', 'Customer Vault', `<button class="btn" data-act="csvCust">${ic('down', 16)}Export CSV</button><button class="btn pri" data-act="custNew">${ic('plus', 16, 2.2)}New contact</button>`) +
+    `<div class="acts"><label class="search">${ic('search', 16)}<input id="c-q" type="search" placeholder="Name, phone, email or CU code" data-bind="ui.cust.q" value="${esc(U.q)}" aria-label="Search customers"></label><select class="sel sm" id="c-src" data-bind="ui.cust.src" aria-label="Lead source"><option value="all">All lead sources</option>${SOURCES.map(s => `<option ${U.src === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+    <div class="cols"><section class="card col-main" style="gap:0;overflow:hidden">${view.length ? `<div class="tblwrap"><table><thead><tr><th>Customer</th><th>Contact</th><th>Lead source</th><th class="r">Deals</th><th class="r">Total paid</th></tr></thead><tbody>${view.map(c => { const ds = deals(c); return `<tr class="click" data-act="custSel" data-code="${esc(c.code)}" ${U.sel === c.code ? 'style="background:#0F1F18"' : ''}><td><div class="cell-item"><span class="av mono" style="width:34px;height:34px;font-size:11px;background:#1C2622">CU</span><div><div style="font-weight:500">${esc(c.name || 'Unnamed')}</div><div class="mono sm mut2">${esc(c.code)}</div></div></div></td><td class="mut">${esc([c.phone, c.email].filter(Boolean).join(' · ') || '—')}</td><td><span class="tag">${esc(c.source || '—')}</span></td><td class="mono r">${ds.length}</td><td class="mono r">${money0(ds.reduce((a, p) => a + num(p.total), 0))}</td></tr>`; }).join('')}</tbody></table></div>` : emptyState(all.length ? 'No customers match.' : 'Customers are added automatically during intake.')}</section>${panel}</div>`;
+}
+
+// ── BOOKKEEPING ───────────────────────────────────────────────────
+function pBooks() {
+  const U = S.ui.books; const all = Object.values(S.txs).sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.code || '').localeCompare(a.code || ''));
+  const months = [...new Set(all.map(t => (t.date || '').slice(0, 7)).filter(Boolean).concat([localISO().slice(0, 7)]))].sort().reverse();
+  const view = all.filter(t => (U.month === 'all' || (t.date || '').startsWith(U.month)) && (U.dir === 'all' || (U.dir === 'in' ? num(t.amount) > 0 : num(t.amount) < 0)) && (U.cat === 'all' || t.category === U.cat) && (U.who === 'all' || t.by === U.who));
+  const inn = view.filter(t => num(t.amount) > 0).reduce((a, t) => a + num(t.amount), 0); const out = view.filter(t => num(t.amount) < 0).reduce((a, t) => a + num(t.amount), 0);
+  const days = Array.from({ length: 14 }, (_, i) => localISO(new Date(Date.now() - (13 - i) * 864e5)));
+  const dayOut = days.map(d => -all.filter(t => t.date === d && num(t.amount) < 0).reduce((a, t) => a + num(t.amount), 0)); const mx = Math.max(1, ...dayOut);
+  const mLabel = m => m === 'all' ? 'All time' : new Date(m + '-15T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  return head('Inventory purchases and the other costs of running the company.', 'Bookkeeping', `<button class="btn" data-act="csvTx">${ic('down', 16)}Export CSV</button><button class="btn pri" data-act="txNew">${ic('plus', 16, 2.2)}Log transaction</button>`, 'OBSIDIAN GADGET / FINANCES') +
+    `<section class="grid g-auto"><div class="card kpi"><span class="mut" style="font-size:13px">Money in</span><span class="v mono em">${money0(inn)}</span><span class="sm mut2">${mLabel(U.month)}</span></div><div class="card kpi"><span class="mut" style="font-size:13px">Money out</span><span class="v mono cor">${money0(out)}</span><span class="sm mut2">${money0(-view.filter(t => t.category === 'Inventory acquisition').reduce((a, t) => a + num(t.amount), 0))} of it inventory</span></div><div class="glow kpi"><span style="font-size:13px;color:#9EE7BC">Net recorded movement</span><span class="v mono">${money0(inn + out)}</span><span class="sm" style="color:#9EE7BC">${mLabel(U.month)}</span></div></section>
+    <section class="card pad" style="display:flex;flex-direction:column;gap:14px"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px"><div><h2>Money timeline</h2><div class="sm mut2" style="margin-top:4px">Daily outflows · last 14 days</div></div><span class="mono sm mut2">${fmtShort(days[0])} – ${fmtShort(days[13])}</span></div>
+      <div role="img" aria-label="Daily outflows bar chart" style="display:flex;align-items:flex-end;gap:8px;height:150px;border-bottom:1px solid #24302B;padding:0 4px">${dayOut.map((v, i) => `<div title="${fmtShort(days[i])}: ${money(-v)}" style="flex:1 1 0;min-width:6px;border-radius:4px 4px 0 0;background:${i === 13 ? '#F6C2B3' : '#F2A08A'};height:${v ? Math.max(3, v / mx * 100) : 0}%"></div>`).join('')}</div></section>
+    <section class="card" style="overflow:hidden"><div style="display:flex;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap">
+      <select class="sel sm" id="b-month" data-bind="ui.books.month" aria-label="Month"><option value="all" ${U.month === 'all' ? 'selected' : ''}>All time</option>${months.map(m => `<option value="${m}" ${U.month === m ? 'selected' : ''}>${mLabel(m)}</option>`).join('')}</select>
+      <select class="sel sm" id="b-dir" data-bind="ui.books.dir" aria-label="Direction"><option value="all">All transactions</option><option value="in" ${U.dir === 'in' ? 'selected' : ''}>Money in</option><option value="out" ${U.dir === 'out' ? 'selected' : ''}>Money out</option></select>
+      <select class="sel sm" id="b-cat" data-bind="ui.books.cat" aria-label="Category"><option value="all">All categories</option>${TX_CATS.map(c => `<option ${U.cat === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
+      <select class="sel sm" id="b-who" data-bind="ui.books.who" aria-label="Who"><option value="all">Anyone</option>${['o1', 'o2'].map(o => `<option value="${o}" ${U.who === o ? 'selected' : ''}>${esc(ownerName(o))}</option>`).join('')}</select></div>
+      ${view.length ? `<div class="tblwrap"><table><thead><tr><th>Date</th><th>Code</th><th>Description</th><th>Category</th><th>Who</th><th>Method</th><th class="r">Amount</th><th></th></tr></thead><tbody>${view.map(t => `<tr><td class="mono mut">${fmtShort(t.date)}</td><td>${codeChip(t.code)}</td><td><div style="font-weight:500">${esc(t.desc)}</div>${t.link ? `<div class="sm" style="margin-top:3px">${codeChip(t.link)}</div>` : t.payee ? `<div class="sm mut2">${esc(t.payee)}</div>` : ''}</td><td><span class="tag">${esc(t.category)}</span></td><td>${esc(ownerName(t.by))}</td><td class="mut">${esc(t.method || '—')}</td><td class="mono r ${num(t.amount) >= 0 ? 'em' : 'cor'}">${money(t.amount, 1)}</td><td class="r"><button class="btn ic sm" style="width:32px" data-act="txEdit" data-code="${esc(t.code)}" aria-label="Edit ${esc(t.code)}">${ic('edit', 14)}</button></td></tr>`).join('')}</tbody></table></div>` : emptyState('No transactions match this view. Log an expense or record an intake.')}</section>`;
+}
+
+// ── ACTIVITY ──────────────────────────────────────────────────────
+function pActivity() {
+  const U = S.ui.act; let all = []; Object.values(S.activity).forEach(ch => (ch.entries || []).forEach(e => all.push(e)));
+  all.sort((a, b) => b.t.localeCompare(a.t));
+  const q = U.q.trim().toLowerCase();
+  const view = all.filter(e => (U.type === 'all' || e.type === U.type) && (U.who === 'all' || e.by === U.who) && (!q || [e.code, e.obj, e.verb, e.detail, ...(e.links || [])].some(v => String(v || '').toLowerCase().includes(q)))).slice(0, 400);
+  const groups = []; view.forEach(e => { const d = e.t.slice(0, 10); const day = localISO(new Date(e.t)); let g = groups[groups.length - 1]; if (!g || g.day !== day) groups.push(g = { day, items: [] }); g.items.push(e); });
+  const dayLabel = d => d === localISO() ? 'Today · ' + fmtShort(d) : d === localISO(new Date(Date.now() - 864e5)) ? 'Yesterday · ' + fmtShort(d) : new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const week = all.filter(e => Date.now() - new Date(e.t) < 7 * 864e5); const wc = o => week.filter(e => e.by === o).length; const wmax = Math.max(1, wc('o1'), wc('o2'), wc('sys'));
+  const keys = Object.keys(CODES);
+  const ownerAv = by => `<span class="av" style="width:30px;height:30px;font-size:12px;background:${(OWNER_COLORS[by] || ['#1F2725'])[0]};color:${(OWNER_COLORS[by] || ['', '#9AA9A2'])[1]}">${by === 'o1' ? 1 : by === 'o2' ? 2 : 'S'}</span>`;
+  return head('Every action across the vault — who did it, when, and to which record', 'Activity', `<button class="btn" data-act="csvAct">${ic('down', 16)}Export log</button>`) +
+    `<div style="display:flex;flex-direction:column;gap:12px"><div style="display:flex;gap:6px;flex-wrap:wrap">${['all'].concat(keys).map(k => { const on = U.type === k; const c = CODES[k]; return `<button class="fchip" data-act="actType" data-v="${k}" style="${on ? (k === 'all' ? 'color:#06120D;background:#3DDC97;border-color:#3DDC97' : `color:${c[1]};background:${c[2]};border-color:${c[1]}`) : ''}" title="${k === 'all' ? 'All actions' : esc(c[0])}">${k === 'all' ? 'All' : k === 'SYS' ? 'System' : k}<b>${k === 'all' ? all.length : all.filter(e => e.type === k).length}</b></button>`; }).join('')}</div>
+      <div class="acts"><div class="tabs">${[['all', 'Everyone'], ['o1', ownerName('o1')], ['o2', ownerName('o2')], ['sys', 'System']].map(([k, l]) => `<button class="${U.who === k ? 'on' : ''}" data-act="actWho" data-v="${k}">${esc(l)}</button>`).join('')}</div><label class="search">${ic('search', 16)}<input id="a-q" type="search" data-bind="ui.act.q" value="${esc(U.q)}" placeholder="Search a code, e.g. VR-00012" aria-label="Search activity"></label></div></div>
+    <div class="cols"><section class="card col-main" style="padding:6px 22px 18px;gap:0">${groups.length ? groups.map(g => `<div style="display:flex;align-items:center;gap:12px;padding:16px 0 6px"><span style="font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase" class="mut">${dayLabel(g.day)}</span><span style="flex-grow:1;height:1px;background:var(--line)"></span><span class="mono sm mut2">${g.items.length} actions</span></div>
+      <ol class="tl" style="list-style:none;margin:0;padding:0">${g.items.map(e => { const c = CODES[e.type] || CODES.SYS; return `<li><span class="mono sm mut2" style="padding-top:16px;text-align:right">${new Date(e.t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span><span class="rail"><span class="pt" style="background:${c[1]};box-shadow:0 0 0 3px #111615,0 0 10px ${c[1]}"></span></span>
+        <div style="padding:10px 0 14px;border-bottom:1px solid #18201D;display:flex;flex-direction:column;gap:8px;min-width:0"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:14px">${ownerAv(e.by)}<b style="font-weight:600">${esc(ownerName(e.by))}</b><span class="mut">${esc(e.verb)}</span>${e.code ? codeChip(e.code, CODES[codeType(e.code)] && codeType(e.code) !== 'SYS') : ''}<span style="color:var(--tx2)">${esc(e.obj)}</span></div>
+        ${e.detail ? `<div class="mut" style="margin-left:40px;font-size:13px">${esc(e.detail)}</div>` : ''}${e.from || e.to ? `<div style="margin-left:40px;display:inline-flex;align-items:center;gap:8px;font-size:12px;align-self:flex-start;padding:5px 10px;border-radius:8px;background:var(--card2);border:1px solid var(--line)"><span class="mut2" style="text-decoration:line-through">${esc(e.from || '—')}</span>${ic('arrow', 12, 2)}<span style="font-weight:500">${esc(e.to || '—')}</span></div>` : ''}
+        ${(e.links || []).length ? `<div style="margin-left:40px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="sm mut2">Linked</span>${e.links.map(l => codeChip(l)).join('')}</div>` : ''}</div></li>`; }).join('')}</ol>`).join('') : emptyState(all.length ? 'No actions match these filters.' : 'Actions appear here as you and your partner work.')}</section>
+      <div class="col-side"><section class="card pad" style="display:flex;flex-direction:column;gap:12px"><h2>Who did what · 7 days</h2>${['o1', 'o2', 'sys'].map(o => `<div style="display:flex;align-items:center;gap:10px;font-size:13px">${ownerAv(o).replace(/30px/g, '26px')}<span style="width:80px;overflow:hidden;text-overflow:ellipsis">${esc(ownerName(o))}</span><div class="bar"><div style="width:${wc(o) / wmax * 100}%;background:${(OWNER_COLORS[o] || ['#6B7570'])[0]}"></div></div><span class="mono" style="width:28px;text-align:right">${wc(o)}</span></div>`).join('')}</section>
+      <section class="card pad" style="display:flex;flex-direction:column;gap:10px"><h2>Record codes</h2>${keys.map(k => `<div style="display:flex;align-items:center;gap:10px;font-size:13px"><span class="code" style="color:${CODES[k][1]};background:${CODES[k][2]};min-width:42px;justify-content:center;cursor:default">${k === 'SYS' ? 'SYS' : k + '-'}</span><span style="color:#C3CEC8">${CODES[k][0]}</span></div>`).join('')}</section>
+      <section class="card pad"><h2 style="margin-bottom:8px">Audit trail</h2><p class="mut" style="margin:0;font-size:13px;line-height:1.55">Entries can’t be edited or deleted. Corrections are logged as new actions, so the history always shows who changed what.</p></section></div></div>`;
+}
+
+// ── SETTINGS ──────────────────────────────────────────────────────
+function pSettings() {
+  const st = S.settings; const sh = st.shopify || {};
+  const sf = (path, label, o = {}) => `<div class="fld ${o.cls || ''}"><label for="sf-${path.replace(/\./g, '-')}">${label}</label><input class="in ${o.mono ? 'mono' : ''}" id="sf-${path.replace(/\./g, '-')}" data-sfield="${path}" ${o.num ? 'inputmode="decimal"' : ''} value="${esc(path.split('.').reduce((a, k) => (a || {})[k], st) ?? '')}" placeholder="${esc(o.ph || '')}"></div>`;
+  return head('Owners, Shopify, storage and data', 'Settings') + `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));align-items:start;gap:20px">
+    <section class="card pad" style="display:flex;flex-direction:column;gap:16px"><h2>Owners &amp; security</h2>
+      <div class="grid g2 stack">${sf('owners.o1', 'Owner 1 name')}${sf('owners.o2', 'Owner 2 name')}</div>
+      <div class="grid g2 stack"><div class="fld"><label for="sf-autolock">Auto-lock after</label><select class="sel" id="sf-autolock" data-sfield="autoLock">${[[5, '5 minutes idle'], [15, '15 minutes idle'], [60, '1 hour idle'], [0, 'Never']].map(([v, l]) => `<option value="${v}" ${+st.autoLock === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="fld"><span class="lb">PINs</span><button class="btn" data-act="resetPins">Change both PINs</button></div></div>
+      <p class="sm mut2" style="margin:0;line-height:1.5">Names show everywhere: activity, bookkeeping, intake. PINs are hashed and stored privately to your signed-in account.</p></section>
+
+    <section class="card pad" style="display:flex;flex-direction:column;gap:16px"><h2>Pricing model</h2>
+      <div class="grid g3 stack">${sf('feePct', 'Marketplace fee %', { num: 1, mono: 1 })}${sf('shipFlat', 'Shipping estimate $', { num: 1, mono: 1 })}${sf('riskPct', 'Risk allowance %', { num: 1, mono: 1 })}</div>
+      <p class="sm mut2" style="margin:0;line-height:1.5">Used for projected margins on every item and to pre-fill eBay fees when recording a sale.</p></section>
+
+    <section class="card pad" style="display:flex;flex-direction:column;gap:16px;grid-column:1/-1"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="display:flex;align-items:center;gap:12px"><span class="cat" style="width:40px;height:40px;background:#0F2A1F;color:#5FE6AC">${ic('shop', 20)}</span><div><h2>Shopify integration</h2><div class="sm mut2" style="margin-top:3px">Not linked to any store yet — connect the store you want listings to go to.</div></div></div>
+      <span class="chip ${sh.mode === 'relay' && sh.relayUrl ? 's-prep' : 's-arch'}"><i></i>${sh.mode === 'relay' && sh.relayUrl ? 'Relay configured' : 'Export mode'}</span></div>
+      <div class="seg" style="align-self:flex-start">${[['export', 'Export (works with any store)'], ['relay', 'Direct API via relay']].map(([k, l]) => `<button class="${sh.mode === k ? 'on' : ''}" data-act="shMode" data-v="${k}">${l}</button>`).join('')}</div>
+      ${sh.mode === 'relay' ? `<div class="grid g2 stack">${sf('shopify.store', 'Store domain', { ph: 'your-store.myshopify.com', mono: 1 })}${sf('shopify.relayUrl', 'Relay URL (HTTPS)', { ph: 'https://your-relay.example.com/shopify/draft', mono: 1 })}</div>` : ''}
+      <div class="grid g2 stack" style="gap:16px">
+        <div class="notice info" style="flex-direction:column;gap:6px"><b>Today — Export mode</b><span>Every listing packet has <b>Shopify CSV</b> and <b>Photos (.zip)</b> buttons. In any store’s admin: <i>Products → Import</i> the CSV, then drag the photos onto the product. Nothing here is tied to a particular store.</span></div>
+        <div class="notice" style="flex-direction:column;gap:6px"><b>Plug-in point — direct API</b><span>To push drafts straight into a store you’ll need: <b>1)</b> a custom app in that store’s admin (<i>Settings → Apps → Develop apps</i>) with the <span class="mono">write_products</span> and <span class="mono">write_files</span> scopes; <b>2)</b> a small relay (e.g. a serverless function) that holds the Admin API token — browsers can’t call Shopify’s Admin API directly and the token must never be stored in this shared vault; <b>3)</b> the relay URL above. The vault sends <span class="mono">{title, descriptionHtml, price, sku, productType, photos:[urls]}</span> and expects <span class="mono">{id, adminUrl}</span> back. The hand-off lives in <span class="mono">ShopifyAdapter</span> in this page’s code.</span></div></div></section>
+
+    <section class="card pad" style="display:flex;flex-direction:column;gap:14px"><div style="display:flex;justify-content:space-between;align-items:center"><div><h2>Storage locations</h2><div class="sm mut2" style="margin-top:4px">Bins used by the Master Vault</div></div></div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">${st.bins.map(b => `<span class="bin" style="height:32px;gap:8px">${esc(b)} <span class="mut2">· ${itemsArr().filter(i => i.bin === b && STOCK.includes(i.status)).length}</span><button class="btn ic sm" style="width:22px;height:22px;border:0;background:transparent;box-shadow:none" data-act="binDel" data-v="${esc(b)}" aria-label="Remove ${esc(b)}">${ic('x', 12, 2)}</button></span>`).join('')}</div>
+      <div class="acts"><input class="in mono" id="bin-new" placeholder="New bin, e.g. C-03" style="max-width:220px" maxlength="20"><button class="btn" data-act="binAdd">${ic('plus', 16, 2.2)}Add bin</button></div></section>
+
+    <section class="card pad" style="display:flex;flex-direction:column;gap:14px"><h2>Record codes</h2><div class="sm mut2">Every record gets a permanent code. Numbers are never reused.</div>
+      <div class="grid g2" style="gap:10px 16px">${Object.keys(CODES).filter(k => k !== 'SYS').map(k => `<div style="display:flex;align-items:center;gap:10px;font-size:13px"><span class="code" style="color:${CODES[k][1]};background:${CODES[k][2]};min-width:38px;justify-content:center;cursor:default">${k}-</span><span style="color:#C3CEC8">${CODES[k][0]}</span></div>`).join('')}</div></section>
+
+    <section class="card pad" style="display:flex;flex-direction:column;gap:14px;grid-column:1/-1"><h2>Sync &amp; data</h2>
+      <div class="notice ${S.live ? 'info' : ''}">${ic('sync', 18)}<div>${S.mode === 'firebase' ? `<b>Live sync is on (Firebase).</b> Every change saves instantly and appears on every signed-in device. Edits made offline are queued and sync when you reconnect. Signed in as <span class="mono">${esc(S.fbEmail || '')}</span>.` : S.mode === 'claude' ? '<b>Live sync is on.</b> Every change saves to the vault’s shared database the moment you make it and appears on every device that has the vault open. Photos are stored with the vault.' : '<b>Local mode.</b> Records and photos are saved in this browser only (other tabs here stay in sync). To sync across devices, add Firebase keys to <span class="mono">config.js</span> — see the README.'}</div></div>
+      ${S.mode === 'firebase' ? '<div class="acts"><button class="btn" data-act="fbSignOut">Sign this device out</button></div>' : ''}
+      <div class="grid g3 stack" style="gap:12px">
+        <div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:10px"><b style="font-size:14px">Full backup</b><span class="sm mut2">All records as one JSON file (photos stay in the vault).</span><button class="btn" data-act="backup">${ic('down', 16)}Download backup</button></div>
+        <div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:10px"><b style="font-size:14px">Restore / import</b><span class="sm mut2">A vault backup, or a backup from the old Obsidian Vault site.</span><label class="btn">${ic('up', 16)}Choose file<input type="file" accept="application/json,.json" data-restore="1" style="display:none"></label></div>
+        <div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:10px"><b style="font-size:14px">Spreadsheet exports</b><span class="sm mut2">Open in Google Sheets or Excel.</span><div class="acts"><button class="btn sm" data-act="csvItems">Items</button><button class="btn sm" data-act="csvTx">Transactions</button><button class="btn sm" data-act="csvCust">Customers</button></div></div></div>
+      <div class="sm mut2" id="usage">${S.assets && S.assets.list ? '<button class="btn sm" data-act="usage">Check photo storage</button>' : ''}</div></section></div>`;
+}
+
+// ── MODALS ────────────────────────────────────────────────────────
+function modalHtml() {
+  const M = S.modal;
+  if (M.kind === 'tx') {
+    const t = M.d; const out = t.dir === 'out';
+    return `<div class="modal-bg" data-act="mClose" data-self="1"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt"><div class="mh"><div><div class="eyebrow">BOOKKEEPING</div><h2 id="mt" style="font-size:22px;margin-top:6px">${t.code ? 'Edit ' + esc(t.code) : 'Log transaction'}</h2></div><button class="btn ic" data-act="mClose" aria-label="Close">${ic('x', 16, 2)}</button></div>
+    <div class="mb">${t.link ? `<div class="notice info">This entry was created automatically from ${codeChip(t.link, false)}. Edits are logged.</div>` : ''}
+      <div class="seg"><button class="${out ? 'on' : ''}" data-act="txDir" data-v="out"><i class="cd" style="background:#F2A08A"></i>Money out</button><button class="${!out ? 'on' : ''}" data-act="txDir" data-v="in"><i class="cd" style="background:#5FE6AC"></i>Money in</button></div>
+      <div class="grid g2 stack"><div class="fld span2"><label for="t-desc">Description *</label><input class="in" id="t-desc" data-bind="modal.d.desc" value="${esc(t.desc)}"></div>
+      <div class="fld"><label for="t-amt">Amount ($) *</label><div class="money"><span>$</span><input class="in" id="t-amt" inputmode="decimal" data-bind="modal.d.amt" value="${esc(t.amt)}"></div></div><div class="fld"><label for="t-date">Date *</label><input class="in" type="date" id="t-date" data-bind="modal.d.date" value="${esc(t.date)}"></div>
+      <div class="fld"><label for="t-cat">Category</label><select class="sel" id="t-cat" data-bind="modal.d.category">${TX_CATS.map(c => `<option ${t.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div><div class="fld"><label for="t-m">Method</label><select class="sel" id="t-m" data-bind="modal.d.method">${TX_METHODS.concat(PAY).filter((v, i, a) => a.indexOf(v) === i).map(c => `<option ${t.method === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+      <div class="fld"><span class="lb">Who made it?</span><div class="seg">${['o1', 'o2'].map(o => `<button class="${t.by === o ? 'on' : ''}" data-act="txBy" data-v="${o}">${esc(ownerName(o))}</button>`).join('')}</div></div><div class="fld"><label for="t-payee">Payee</label><input class="in" id="t-payee" data-bind="modal.d.payee" value="${esc(t.payee || '')}"></div>
+      <div class="fld"><label for="t-ref">Reference</label><input class="in mono" id="t-ref" data-bind="modal.d.ref" value="${esc(t.ref || '')}"></div><div class="fld"><label for="t-tags">Tags</label><input class="in" id="t-tags" data-bind="modal.d.tags" value="${esc(t.tags || '')}" placeholder="comma separated"></div>
+      <div class="fld span2"><label for="t-notes">Notes</label><textarea class="ta" id="t-notes" data-bind="modal.d.notes" rows="2">${esc(t.notes || '')}</textarea></div></div>
+      ${M.err ? `<div class="notice bad">${esc(M.err)}</div>` : ''}</div>
+    <div class="mf">${t.code && !t.link ? `<button class="btn danger" style="margin-right:auto" data-act="txDel">Delete</button>` : ''}<button class="btn" data-act="mClose">Cancel</button><button class="btn pri" data-act="txSave" ${M.busy ? 'disabled' : ''}>${M.busy ? 'Saving…' : t.code ? 'Save changes' : 'Log transaction'}</button></div></div></div>`;
+  }
+  if (M.kind === 'cust') {
+    const c = M.d;
+    return `<div class="modal-bg" data-act="mClose" data-self="1"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mc"><div class="mh"><h2 id="mc" style="font-size:22px">New contact</h2><button class="btn ic" data-act="mClose" aria-label="Close">${ic('x', 16, 2)}</button></div>
+    <div class="mb"><div class="grid g2 stack"><div class="fld"><label for="c-n">Full name *</label><input class="in" id="c-n" data-bind="modal.d.name" value="${esc(c.name)}"></div><div class="fld"><label for="c-p">Phone *</label><input class="in mono" id="c-p" data-bind="modal.d.phone" value="${esc(c.phone)}"></div>
+    <div class="fld"><label for="c-e">Email</label><input class="in" id="c-e" data-bind="modal.d.email" value="${esc(c.email)}"></div><div class="fld"><label for="c-s">Lead source</label><select class="sel" id="c-s" data-bind="modal.d.source">${SOURCES.map(s => `<option ${c.source === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div></div>${M.err ? `<div class="notice bad">${esc(M.err)}</div>` : ''}</div>
+    <div class="mf"><button class="btn" data-act="mClose">Cancel</button><button class="btn pri" data-act="custSave" ${M.busy ? 'disabled' : ''}>Save contact</button></div></div></div>`;
+  }
+  if (M.kind === 'confirm') {
+    return `<div class="modal-bg" data-act="mClose" data-self="1"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mq" style="max-width:480px"><div class="mh"><h2 id="mq" style="font-size:20px">${esc(M.title)}</h2></div><div class="mb"><p class="mut" style="margin:0;line-height:1.6">${M.body}</p>${M.input ? `<input class="in" id="mq-in" data-bind="modal.val" value="${esc(M.val || '')}" placeholder="${esc(M.input)}">` : ''}</div>
+    <div class="mf"><button class="btn" data-act="mClose">Cancel</button><button class="btn ${M.danger ? 'danger' : 'pri'}" data-act="mOk" ${M.busy ? 'disabled' : ''}>${esc(M.ok || 'Confirm')}</button></div></div></div>`;
+  }
+  return '';
+}
+function confirmBox(o) { return new Promise(res => { S.modal = { kind: 'confirm', ...o, resolve: res }; render(); }); }
+
+// ── item writes ───────────────────────────────────────────────────
+const FIELD_LABEL = { title: 'title', category: 'category', condition: 'condition', specs: 'specs', serial: 'serial', status: 'status', bin: 'location', customerId: 'seller', source: 'lead source', acquired: 'acquired date', confidence: 'confidence score', defect: 'defect description', notes: 'notes', resale: 'expected resale', cost: 'purchase cost' };
+const NUMERIC = ['resale', 'cost', 'confidence', 'packet.price', 'sale.price', 'sale.fees', 'sale.ship'];
+async function commitItemField(code, f, raw) {
+  const it = S.items[code]; if (!it) return;
+  let v = NUMERIC.includes(f) ? num(raw) : String(raw).trim(); if (f === 'confidence') v = Math.max(0, Math.min(100, Math.round(v)));
+  const old = f.includes('.') ? f.split('.').reduce((o, k) => (o || {})[k], it) : it[f];
+  if (String(old ?? '') === String(v)) { delete (S.ui.edit[code] || {})[f]; return; }
+  if (f === 'title' && !v) { toast('The title can’t be empty.', 'err'); delete (S.ui.edit[code] || {})[f]; render(); return; }
+  const patch = f.includes('.') ? { [f.split('.')[0]]: { [f.split('.')[1]]: v } } : { [f]: v };
+  patch.updatedAt = nowISO(); patch.updatedBy = S.owner;
+  try {
+    await write(() => ref('items/' + code).update(patch), it.code);
+    delete (S.ui.edit[code] || {})[f];
+    if (f === 'status') logAct('VR', 'changed status of', code, it.title, '', [], STATUS[old] ? STATUS[old][0] : old, STATUS[v][0]);
+    else if (f.startsWith('packet.')) logAct('LT', 'edited listing packet for', code, it.title, `Updated ${f.split('.')[1]}`);
+    else if (f.startsWith('sale.')) { logAct('SL', 'edited sale details of', code, it.title, `${f.split('.')[1]}: ${old ?? '—'} → ${v}`); syncSaleTx(code); }
+    else if (['bin', 'resale', 'cost', 'condition', 'category', 'customerId', 'source', 'acquired'].includes(f)) logAct(f === 'bin' ? 'AJ' : 'VR', 'edited ' + FIELD_LABEL[f] + ' of', code, it.title, '', [], String(old ?? '—'), String(v || '—'));
+    else logAct('VR', 'edited ' + (FIELD_LABEL[f] || f) + ' of', code, it.title);
+    if (f === 'cost' && it.purchaseId) syncPurchaseTotal(it.purchaseId);
+  } catch (e) {}
+}
+async function syncSaleTx(code) {
+  const it = S.items[code]; if (!it || !it.sale || !it.sale.txCode) return; const s = it.sale; const net = num(s.price) - num(s.fees) - num(s.ship);
+  try { await write(() => ref('txs/' + s.txCode).update({ amount: +net.toFixed(2), date: s.date, desc: `Sale ${s.code} · ${it.title}`, updatedAt: nowISO() })); } catch (e) {}
+}
+async function syncPurchaseTotal(pu) {
+  const p = S.purchases[pu]; if (!p) return; await sleep(400);
+  const total = itemsArr().filter(i => i.purchaseId === pu).reduce((a, i) => a + num(i.cost), 0);
+  try { await write(() => ref('purchases/' + pu).update({ total: +total.toFixed(2) })); if (p.txCode) await write(() => ref('txs/' + p.txCode).update({ amount: -(+total.toFixed(2)) })); } catch (e) {}
+}
+async function setStatus(code, st, verb) {
+  const it = S.items[code]; if (!it) return; const old = it.status;
+  try { await write(() => ref('items/' + code).update({ status: st, updatedAt: nowISO(), updatedBy: S.owner })); logAct(st === 'arch' ? 'AJ' : 'VR', verb || 'changed status of', code, it.title, '', [], STATUS[old][0], STATUS[st][0]); toast(`${it.code} → ${STATUS[st][0]}`); } catch (e) {}
+}
+
+// ── photos ────────────────────────────────────────────────────────
+async function prepImage(file) {
+  if (file.size <= 4.5e6) { try { const bm = await createImageBitmap(file); const big = Math.max(bm.width, bm.height) > 3200; bm.close && bm.close(); if (!big) return file; } catch (e) { return file; } }
+  const bm = await createImageBitmap(file); const scale = Math.min(1, 2400 / Math.max(bm.width, bm.height));
+  const cv = document.createElement('canvas'); cv.width = Math.round(bm.width * scale); cv.height = Math.round(bm.height * scale);
+  cv.getContext('2d').drawImage(bm, 0, 0, cv.width, cv.height);
+  return await new Promise(r => cv.toBlob(b => r(b || file), 'image/jpeg', 0.86));
+}
+async function uploadPhotos(code, files) {
+  if (!S.assets) { toast('Photo uploads need edit access to this vault.', 'err'); return; }
+  const list = [...files]; let added = 0;
+  for (const f of list) {
+    const it = S.items[code]; const cur = ((it && it.packet && it.packet.photos) || []);
+    if (cur.length + (S.uploads[code] || 0) >= 12) { toast('Keep a maximum of 12 photos.', 'err'); break; }
+    if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { toast(`${f.name}: use JPEG, PNG or WebP.`, 'err'); continue; }
+    if (f.size > 25e6) { toast(`${f.name} is too large.`, 'err'); continue; }
+    S.uploads[code] = (S.uploads[code] || 0) + 1; render();
+    try {
+      const blob = await prepImage(f); let r;
+      try { r = await S.assets.upload(blob, { type: blob.type || f.type }); }
+      catch (e) { if (e && e.code === 'store_unavailable') { await sleep(800); r = await S.assets.upload(blob, { type: blob.type || f.type }); } else throw e; }
+      const latest = ((S.items[code] && S.items[code].packet && S.items[code].packet.photos) || []);
+      await write(() => ref('items/' + code).update({ packet: { photos: [...latest.filter(x => x !== r.id), r.id] }, updatedAt: nowISO() }), 'photo');
+      added++;
+    } catch (e) {
+      const m = { too_large: 'is too large', unsupported_type: 'is not a supported image', quota_or_state: 'could not be stored — photo storage is full', rate_limited: 'was rate-limited — try again shortly' }[e && e.code];
+      toast(`${f.name} ${m || 'could not be uploaded. Try again.'}`, 'err');
+    } finally { S.uploads[code] = Math.max(0, (S.uploads[code] || 1) - 1); render(); }
+  }
+  if (added) { toast(`${added} photo${added > 1 ? 's' : ''} saved to the vault.`); logAct('LT', `added ${added} photo${added > 1 ? 's' : ''} to`, code, (S.items[code] || {}).title); }
+}
+async function savePhotos(code, photos, verb) { try { await write(() => ref('items/' + code).update({ packet: { photos }, updatedAt: nowISO() }), 'photo order'); if (verb) logAct('LT', verb, code, (S.items[code] || {}).title); } catch (e) {} }
+
+// ── Shopify: export + plug-in adapter ─────────────────────────────
+/* ShopifyAdapter — the single hand-off point for a direct store integration.
+   The vault never stores Shopify credentials. Point settings.shopify.relayUrl at a
+   relay you control that holds the Admin API token, accepts POST JSON
+   {title, descriptionHtml, price, sku, productType, vendor, tags, photos:[{url, alt}], productId?}
+   and responds {id, adminUrl}. Photos are sent as same-origin vault URLs; the relay must
+   fetch them with the viewer's session or you can switch to uploading bytes (see notes). */
+const ShopifyAdapter = {
+  configured() { const s = S.settings.shopify || {}; return s.mode === 'relay' && /^https:\/\//.test(s.relayUrl || ''); },
+  async pushDraft(payload) {
+    const s = S.settings.shopify;
+    const res = await fetch(s.relayUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error('Relay answered ' + res.status);
+    return await res.json();
+  }
+};
+const descHtml = t => String(t || '').split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
+function packetOf(it) { const pk = it.packet || {}; return { title: pk.title || it.title, price: num(pk.price || it.resale), description: pk.description || it.defect || '', photos: pk.photos || [] }; }
+function csvCell(v) { v = String(v ?? ''); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+const toCSV = rows => rows.map(r => r.map(csvCell).join(',')).join('\n');
+async function saveFile(filename, data) {
+  try { if (S.dl) { await S.dl.save({ filename, data }); return true; } } catch (e) { if (e && e.code === 'declined') return false; if (e && !['unavailable', 'not_granted', 'capability_disabled', 'capability_removed'].includes(e.code)) { toast('Download failed: ' + (e.message || e.code), 'err'); return false; } }
+  try { const blob = data instanceof Blob ? data : new Blob([data]); const u = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = u; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 2000); return true; } catch (e) { toast('This view can’t save files.', 'err'); return false; }
+}
+function shopifyCSV(it) {
+  const p = packetOf(it); const handle = (p.title || it.code).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80) || it.code.toLowerCase();
+  return toCSV([['Handle', 'Title', 'Body (HTML)', 'Vendor', 'Type', 'Tags', 'Published', 'Option1 Name', 'Option1 Value', 'Variant SKU', 'Variant Inventory Qty', 'Variant Inventory Policy', 'Variant Fulfillment Service', 'Variant Price', 'Variant Requires Shipping', 'Variant Taxable', 'Status'],
+    [handle, p.title, descHtml(p.description), (p.title || '').split(' ')[0], it.category, ['obsidian-vault', it.code, it.condition].join(', '), 'FALSE', 'Title', 'Default Title', it.code, '1', 'deny', 'manual', p.price.toFixed(2), 'TRUE', 'TRUE', 'draft']]);
+}
+let zipLib = null;
+function loadZip() { if (zipLib) return zipLib; zipLib = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'; s.onload = () => res(window.JSZip); s.onerror = () => { zipLib = null; rej(new Error('zip')); }; document.head.appendChild(s); }); return zipLib; }
+
+// ── backup / restore / CSV ────────────────────────────────────────
+async function backup() {
+  const counters = {}; for (const k of Object.keys(PADS)) { try { const s = await ref('counters/' + k).get(); counters[k] = s.exists ? s.data().n || 0 : 0; } catch (e) {} }
+  const data = { app: 'obsidian-vault', version: 2, exportedAt: nowISO(), settings: S.settings, counters, items: S.items, customers: S.customers, purchases: S.purchases, sales: S.sales, txs: S.txs, activity: S.activity };
+  if (await saveFile(`obsidian-vault-backup-${localISO()}.json`, JSON.stringify(data, null, 1))) { toast('Backup downloaded.'); logAct('SYS', 'downloaded a backup', 'BACKUP', '', `${Object.keys(S.items).length} items · ${Object.keys(S.txs).length} transactions`); }
+}
+async function restore(file) {
+  let data; try { data = JSON.parse(await file.text()); } catch (e) { toast('That file isn’t a valid backup.', 'err'); return; }
+  const legacy = !data.app && Array.isArray(data.items);
+  if (!legacy && data.app !== 'obsidian-vault') { toast('That file isn’t an Obsidian Vault backup.', 'err'); return; }
+  const n = legacy ? data.items.length : Object.keys(data.items || {}).length;
+  const ok = await confirmBox({ title: legacy ? 'Import old Obsidian Vault backup?' : 'Restore this backup?', body: legacy ? `${n} items from the old site will be added as new vault records with fresh VR codes. Nothing existing is deleted.` : `${n} items plus customers, transactions and activity will be written into the vault. Records with the same code are replaced; nothing else is deleted.`, ok: legacy ? 'Import' : 'Restore' });
+  if (!ok) return;
+  toast('Writing records… keep this tab open.');
+  try {
+    if (legacy) await importLegacy(data.items);
+    else {
+      const cols = ['items', 'customers', 'purchases', 'sales', 'txs', 'activity'];
+      for (const c of cols) for (const [id, doc] of Object.entries(data[c] || {})) await write(() => ref(c + '/' + id).set(doc), id);
+      if (data.settings) await write(() => ref('meta/settings').set(data.settings));
+      for (const [k, v] of Object.entries(data.counters || {})) { const s = await ref('counters/' + k).get(); const cur = s.exists ? s.data().n || 0 : 0; if (v > cur) await write(() => ref('counters/' + k).set({ n: v })); }
+    }
+    toast('Restore complete.'); logAct('SYS', legacy ? 'imported the old site backup' : 'restored a backup', 'RESTORE', '', `${n} items`);
+  } catch (e) { toast('Restore stopped partway. Run it again — it’s safe to repeat.', 'err'); }
+}
+async function importLegacy(rows) {
+  const stMap = { New: 'new', Processing: 'proc', Prepared: 'prep', Listed: 'list', Sold: 'sold', Archived: 'arch' };
+  const custByPhone = {}; Object.values(S.customers).forEach(c => { const d = String(c.phone || '').replace(/\D/g, ''); if (d) custByPhone[d] = c.code; });
+  for (const r of rows) {
+    let cu = null; const ph = String(r.customerPhone || r.phone || '').replace(/\D/g, '');
+    if (r.customer || ph) { if (ph && custByPhone[ph]) cu = custByPhone[ph]; else { cu = await nextCode('CU'); await write(() => ref('customers/' + cu).set({ code: cu, name: r.customer || 'Unnamed', phone: r.customerPhone || '', email: r.customerContact || '', source: r.source || 'Walk-in', notes: '', createdAt: nowISO(), by: S.owner })); if (ph) custByPhone[ph] = cu; } }
+    const qty = Math.max(1, Math.round(num(r.quantity) || 1));
+    for (let q = 0; q < qty; q++) {
+      const vr = await nextCode('VR');
+      await write(() => ref('items/' + vr).set({ code: vr, title: r.model || r.title || 'Untitled item', category: CATS[r.category] ? r.category : 'Other', specs: r.specs || '', serial: q === 0 ? (r.serial || '') : '', condition: CONDS[r.condition] ? r.condition : 'Good', defect: r.notes || r.defect || '', cost: num(r.cost), resale: num(r.resale), status: stMap[r.status] || 'new', bin: '', source: r.source || '', customerId: cu, purchaseId: '', acquired: (r.date || '').slice(0, 10) || localISO(), confidence: 70, notes: 'Imported from the old Obsidian Vault site' + (r.id ? ` (id ${r.id})` : ''), by: r.purchasedBy === 'Paul' ? 'o2' : S.owner, createdAt: nowISO(), packet: { title: '', price: 0, description: '', photos: [] } }));
+    }
+  }
+}
+function csvItems() { return toCSV([['VR code', 'Title', 'Category', 'Condition', 'Specs', 'Serial', 'Status', 'Location', 'Cost', 'Expected resale', 'Sale price', 'Profit', 'Customer', 'Source', 'Acquired', 'Purchase']].concat(itemsArr().sort(byNewest).map(i => [i.code, i.title, i.category, i.condition, i.specs, i.serial, STATUS[i.status] ? STATUS[i.status][0] : i.status, i.bin, num(i.cost).toFixed(2), num(i.resale).toFixed(2), i.sale ? num(i.sale.price).toFixed(2) : '', econ(i).margin.toFixed(2), custName(i.customerId), i.source, i.acquired, i.purchaseId]))); }
+function csvTx() { return toCSV([['TX code', 'Date', 'Description', 'Category', 'Amount', 'Method', 'Who', 'Payee', 'Reference', 'Linked', 'Tags', 'Notes']].concat(Object.values(S.txs).sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(t => [t.code, t.date, t.desc, t.category, num(t.amount).toFixed(2), t.method, ownerName(t.by), t.payee, t.ref, t.link, t.tags, t.notes]))); }
+function csvCust() { return toCSV([['CU code', 'Name', 'Phone', 'Email', 'Source', 'Notes', 'Created']].concat(Object.values(S.customers).map(c => [c.code, c.name, c.phone, c.email, c.source, c.notes, (c.createdAt || '').slice(0, 10)]))); }
+function csvAct() { const rows = []; Object.values(S.activity).forEach(ch => (ch.entries || []).forEach(e => rows.push(e))); rows.sort((a, b) => a.t.localeCompare(b.t)); return toCSV([['Time', 'Who', 'Action', 'Code', 'Object', 'Detail', 'From', 'To', 'Linked']].concat(rows.map(e => [e.t, ownerName(e.by), e.verb, e.code, e.obj, e.detail, e.from, e.to, (e.links || []).join(' ')]))); }
+
+// ── intake completion ─────────────────────────────────────────────
+async function completeIntake() {
+  const N = S.ui.intake; if (N.busy) return;
+  if (!N.items.length) { N.err = 'Add at least one item to the purchase.'; return render(); }
+  if (!N.customerId && (!N.c.name.trim() || !N.c.phone.trim())) { N.err = 'Enter the customer name and phone number.'; N.step = 2; return render(); }
+  if (!N.confirm) { N.err = 'Confirm the customer owns these devices.'; return render(); }
+  N.busy = true; N.err = ''; render();
+  try {
+    const pu = await nextCode('PU'); const tx = await nextCode('TX'); let cu = N.customerId; let newCust = false;
+    if (!cu) { cu = await nextCode('CU'); newCust = true; await write(() => ref('customers/' + cu).set({ code: cu, name: N.c.name.trim(), phone: N.c.phone.trim(), email: N.c.email.trim(), source: N.c.source, notes: '', createdAt: nowISO(), lastDeal: N.date, by: N.by }), 'customer'); }
+    else await write(() => ref('customers/' + cu).update({ lastDeal: N.date }), 'customer');
+    const codes = []; let total = 0;
+    for (const x of N.items) {
+      const q = Math.round(num(x.qty) || 1);
+      for (let k = 0; k < q; k++) {
+        const vr = await nextCode('VR'); codes.push(vr); total += num(x.cost);
+        await write(() => ref('items/' + vr).set({ code: vr, title: x.title.trim(), category: x.category, specs: x.specs.trim(), serial: x.serial.trim(), condition: x.condition, defect: x.defect.trim(), cost: num(x.cost), resale: num(x.resale), status: 'new', bin: '', source: newCust ? N.c.source : ((S.customers[cu] || {}).source || ''), customerId: cu, purchaseId: pu, acquired: N.date, confidence: 70, notes: '', by: N.by, createdAt: nowISO(), packet: { title: '', price: 0, description: '', photos: [] } }), vr);
+      }
+    }
+    total = +total.toFixed(2);
+    const custN = newCust ? N.c.name.trim() : (S.customers[cu] || {}).name || '';
+    await write(() => ref('purchases/' + pu).set({ code: pu, customerId: cu, items: codes, total, method: N.method, ref: N.ref.trim(), date: N.date, by: N.by, txCode: tx, createdAt: nowISO() }), pu);
+    await write(() => ref('txs/' + tx).set({ code: tx, date: N.date, desc: `Purchase ${pu} · ${codes.length} item${codes.length > 1 ? 's' : ''}`, amount: -total, category: 'Inventory acquisition', method: N.method, by: N.by, payee: custN, ref: N.ref.trim(), link: pu, tags: '', notes: '', createdAt: nowISO() }), tx);
+    if (newCust) logAct('CU', 'added customer', cu, custN, `${N.c.source}`);
+    logAct('PU', 'completed purchase', pu, `${codes.length} item${codes.length > 1 ? 's' : ''}`, `${money(total)} paid via ${N.method}`, [...codes, cu, tx]);
+    S.ui.intake = null; toast(`Purchase ${pu} saved — ${codes.length} item${codes.length > 1 ? 's' : ''} added.`); go(codes.length === 1 ? '#/item/' + encodeURIComponent(codes[0]) : '#/inventory');
+  } catch (e) { N.busy = false; N.err = (e && e.message) || 'Could not complete the purchase. Nothing was lost — try again.'; render(); }
+}
+
+// ── sale completion ───────────────────────────────────────────────
+async function completeSale() {
+  const s = S.ui.sale; const it = S.items[s.code]; if (s.busy) return;
+  if (!it) { s.err = 'Choose the item that sold.'; return render(); }
+  if (!(num(s.price) > 0)) { s.err = 'Enter a valid sale price.'; return render(); }
+  s.busy = true; s.err = ''; render();
+  try {
+    const sl = await nextCode('SL'); const tx = await nextCode('TX'); const net = +(num(s.price) - num(s.fees) - num(s.ship)).toFixed(2); const profit = +(net - num(it.cost)).toFixed(2);
+    const sale = { code: sl, txCode: tx, channel: s.channel, price: num(s.price), fees: num(s.fees), ship: num(s.ship), date: s.date, order: s.order.trim(), tracking: s.tracking.trim(), buyer: s.buyer.trim() };
+    await write(() => ref('sales/' + sl).set({ ...sale, item: it.code, net, profit, by: S.owner, createdAt: nowISO() }), sl);
+    await write(() => ref('items/' + it.code).update({ status: 'sold', sale, updatedAt: nowISO(), updatedBy: S.owner }), it.code);
+    await write(() => ref('txs/' + tx).set({ code: tx, date: s.date, desc: `Sale ${sl} · ${it.title}`, amount: net, category: 'Sales', method: 'Payout', by: S.owner, payee: s.buyer.trim() || s.channel, ref: s.order.trim(), link: sl, tags: s.channel, notes: `Price ${money(s.price)} − fees ${money(s.fees)} − shipping ${money(s.ship)}`, createdAt: nowISO() }), tx);
+    logAct('SL', 'recorded sale', sl, it.title, `${s.channel} · ${money(s.price)} · net ${money(profit, 1)}`, [it.code, tx], STATUS[it.status][0], 'Sold');
+    S.ui.sale = null; toast(`Sale ${sl} recorded.`); go('#/item/' + encodeURIComponent(it.code));
+  } catch (e) { s.busy = false; s.err = (e && e.message) || 'Could not save the sale. Try again.'; render(); }
+}
+
+// ── code navigation ───────────────────────────────────────────────
+function gotoCode(c) {
+  const t = codeType(c);
+  if (t === 'VR' && S.items[c]) return go('#/item/' + encodeURIComponent(c));
+  if (t === 'CU' && S.customers[c]) { S.ui.cust.sel = c; return go('#/customers'); }
+  if (t === 'SL') { const s = S.sales[c]; if (s && s.item) return go('#/item/' + encodeURIComponent(s.item)); }
+  if (t === 'TX') { const tx = S.txs[c]; if (tx) { S.ui.books.month = 'all'; return openTx(tx); } }
+  if (t === 'PU' || t === 'LT' || t === 'AJ' || t === 'RT') { S.ui.master = { ...S.ui.master, tab: 'all', q: c, page: 0 }; const items = itemsArr().filter(i => i.purchaseId === c || (i.packet || {}).code === c); if (items.length === 1) return go('#/item/' + encodeURIComponent(items[0].code)); if (t === 'PU') return go('#/master'); }
+  S.ui.act.q = c; go('#/activity');
+}
+function openTx(t) { S.modal = { kind: 'tx', d: t ? { ...t, dir: num(t.amount) < 0 ? 'out' : 'in', amt: Math.abs(num(t.amount)).toFixed(2) } : { code: '', dir: 'out', desc: '', amt: '', date: localISO(), category: 'Supplies', method: 'Card', by: S.owner, payee: '', ref: '', tags: '', notes: '' } }; render(); }
+
+// ── event handling ────────────────────────────────────────────────
+const setPath = (path, v) => { const ks = path.split('.'); let o = ks[0] === 'lock' ? S : ks[0] === 'modal' ? S : S; for (let i = 0; i < ks.length - 1; i++) o = o[ks[i]]; o[ks[ks.length - 1]] = v; };
+const ACT = {
+  goto: el => gotoCode(el.dataset.code),
+  open: el => go('#/item/' + encodeURIComponent(el.dataset.code)),
+  lock: () => lockNow(),
+  pickWho: el => { S.lock.who = el.dataset.o; S.lock.pin = ''; S.lock.err = ''; render(); },
+  key: el => { const k = el.dataset.k, L = S.lock; if (L.until > Date.now()) return; if (k === 'C') L.pin = ''; else if (k === '⌫') L.pin = L.pin.slice(0, -1); else if (L.pin.length < 8) L.pin += k; L.err = ''; render(); },
+  unlock: async () => {
+    const L = S.lock; if (L.until > Date.now() || L.pin.length < 4) return; const rec = S.pins && S.pins[L.who];
+    if (!rec) { L.err = 'No PIN set for this owner.'; return render(); }
+    const h = await hashPin(L.pin, rec.salt);
+    if (h.hash === rec.hash) { L.fails = 0; L.pin = ''; L.err = ''; setOwner(L.who); S.lastAct = Date.now(); render(); logAct('SYS', 'unlocked the workspace', 'LOGIN'); }
+    else { L.fails++; L.pin = ''; L.err = `Incorrect PIN for ${ownerName(L.who)}.`; if (L.fails >= 5) { L.until = Date.now() + 60000; L.fails = 0; const t = setInterval(() => { render(); if (L.until <= Date.now()) clearInterval(t); }, 1000); } render(); }
+  },
+  setPins: async () => {
+    const s = S.lock.setup, L = S.lock; const ok = p => /^\d{4,8}$/.test(p);
+    if (!ok(s.p1) || !ok(s.p2)) { L.err = 'Use 4–8 digits for each PIN.'; return render(); }
+    if (s.p1 !== s.c1 || s.p2 !== s.c2) { L.err = 'PINs and confirmations don’t match.'; return render(); }
+    if (s.p1 === s.p2) { L.err = 'Each owner needs a different PIN.'; return render(); }
+    try { await savePins({ o1: await hashPin(s.p1), o2: await hashPin(s.p2) }); L.setup = { p1: '', c1: '', p2: '', c2: '' }; L.err = ''; setOwner('o1'); S.lastAct = Date.now(); render(); logAct('SYS', 'set up owner PINs', 'PINS'); }
+    catch (e) { L.err = 'Could not save PINs. Try again.'; render(); }
+  },
+  resetPins: async () => { if (await confirmBox({ title: 'Change both PINs?', body: 'You will set new PINs for both owners right now.', ok: 'Continue' })) { S.pins = null; setOwner(null); render(); } },
+  invTab: el => { S.ui.inv.tab = el.dataset.tab; if (S.route.page !== 'inventory') go('#/inventory'); else render(); },
+  mTab: el => { S.ui.master.tab = el.dataset.tab; S.ui.master.page = 0; render(); },
+  mPage: el => { S.ui.master.page += +el.dataset.d; render(); },
+  selOne: el => { S.ui.master.sel[el.dataset.code] = el.checked; render(); },
+  selPage: el => { const U = S.ui.master; document.querySelectorAll('[data-act="selOne"]').forEach(c => { U.sel[c.dataset.code] = el.checked; }); render(); },
+  bulkClear: () => { S.ui.master.sel = {}; render(); },
+  bulkBin: async () => { const b = $('#bulk-bin').value; if (!b) return toast('Choose a bin first.', 'err'); const sel = Object.keys(S.ui.master.sel).filter(k => S.ui.master.sel[k] && S.items[k]); const aj = await nextCode('AJ').catch(() => ''); for (const c of sel) await write(() => ref('items/' + c).update({ bin: b, updatedAt: nowISO() })).catch(() => {}); logAct('AJ', `moved ${sel.length} item${sel.length > 1 ? 's' : ''} to`, aj, 'bin ' + b, '', sel.slice(0, 20)); S.ui.master.sel = {}; toast(`Moved ${sel.length} to ${b}.`); render(); },
+  bulkStatus: async () => { const v = $('#bulk-st').value; if (!v) return toast('Choose a status first.', 'err'); const sel = Object.keys(S.ui.master.sel).filter(k => S.ui.master.sel[k] && S.items[k] && S.items[k].status !== 'sold'); for (const c of sel) await write(() => ref('items/' + c).update({ status: v, updatedAt: nowISO() })).catch(() => {}); logAct('VR', `set ${sel.length} item${sel.length > 1 ? 's' : ''} to ${STATUS[v][0]}`, '', '', '', sel.slice(0, 20)); S.ui.master.sel = {}; toast(`Updated ${sel.length}.`); render(); },
+  bulkArchive: async () => { const sel = Object.keys(S.ui.master.sel).filter(k => S.ui.master.sel[k] && S.items[k] && S.items[k].status !== 'sold'); if (!sel.length) return; if (!await confirmBox({ title: `Archive ${sel.length} item${sel.length > 1 ? 's' : ''}?`, body: 'Archived items leave the Inventory Vault but stay in the Master Vault. You can restore them anytime.', ok: 'Archive' })) return; const aj = await nextCode('AJ').catch(() => ''); for (const c of sel) await write(() => ref('items/' + c).update({ status: 'arch', updatedAt: nowISO() })).catch(() => {}); logAct('AJ', `archived ${sel.length} item${sel.length > 1 ? 's' : ''}`, aj, '', '', sel.slice(0, 20)); S.ui.master.sel = {}; render(); },
+  advance: el => { const it = S.items[el.dataset.code]; const n = FLOW[FLOW.indexOf(it.status) + 1]; if (n && n !== 'sold') setStatus(it.code, n, 'advanced'); },
+  archive: async el => { const it = S.items[el.dataset.code]; if (await confirmBox({ title: `Archive ${it.code}?`, body: 'It leaves the Inventory Vault but stays in the Master Vault. Use this for write-offs, parted-out units or items you’re keeping.', ok: 'Archive', input: 'Reason (optional)' })) { const aj = await nextCode('AJ').catch(() => ''); await write(() => ref('items/' + it.code).update({ status: 'arch', archiveReason: S.modalVal || '', updatedAt: nowISO() })).catch(() => {}); logAct('AJ', 'archived', aj, it.title, S.modalVal || '', [it.code], STATUS[it.status][0], 'Archived'); } },
+  unarchive: el => setStatus(el.dataset.code, 'new', 'restored to stock'),
+  returnSale: async el => { const it = S.items[el.dataset.code]; if (!await confirmBox({ title: `Process a return for ${it.code}?`, body: 'The item goes back to Processing, and a refund equal to the sale payout is logged in Bookkeeping.', ok: 'Process return', danger: 1 })) return; const rt = await nextCode('RT'); const tx = await nextCode('TX'); const s = it.sale || {}; const net = num(s.price) - num(s.fees) - num(s.ship); await write(() => ref('txs/' + tx).set({ code: tx, date: localISO(), desc: `Return ${rt} · ${it.title}`, amount: -net, category: 'Sales', method: 'Payout', by: S.owner, payee: s.buyer || s.channel || '', ref: s.order || '', link: rt, tags: 'return', notes: '', createdAt: nowISO() })); await write(() => ref('items/' + it.code).update({ status: 'proc', sale: null, lastSale: { ...s, returned: rt }, updatedAt: nowISO() })); logAct('RT', 'processed return', rt, it.title, `Refunded ${money(net)}`, [it.code, s.code, tx].filter(Boolean), 'Sold', 'Processing'); toast(`Return ${rt} recorded.`); },
+  phMove: el => { const it = S.items[el.dataset.code]; const p = [...it.packet.photos]; const i = +el.dataset.i, j = i + +el.dataset.d; if (j < 0 || j >= p.length) return; [p[i], p[j]] = [p[j], p[i]]; savePhotos(it.code, p); },
+  phCover: el => { const it = S.items[el.dataset.code]; const p = [...it.packet.photos]; const [x] = p.splice(+el.dataset.i, 1); p.unshift(x); savePhotos(it.code, p, 'changed the cover photo of'); },
+  phDel: async el => { const it = S.items[el.dataset.code]; const p = [...it.packet.photos]; const [id] = p.splice(+el.dataset.i, 1); if (!await confirmBox({ title: 'Remove this photo?', body: 'It is deleted from the vault for good.', ok: 'Remove', danger: 1 })) return; await savePhotos(it.code, p, 'removed a photo from'); if (S.assets) S.assets.delete(id).catch(() => {}); },
+  pkCsv: async el => { const it = S.items[el.dataset.code]; if (await saveFile(`${it.code}-shopify-import.csv`, shopifyCSV(it))) logAct('LT', 'exported Shopify CSV for', it.code, it.title); },
+  pkZip: async el => {
+    const it = S.items[el.dataset.code]; const p = packetOf(it); if (!p.photos.length) return toast('Add at least one photo first.', 'err');
+    toast('Building the photo packet…');
+    try { const JSZip = await loadZip(); const z = new JSZip(); let i = 0; for (const id of p.photos) { let b; try { b = await photoBlob(id); } catch (e) { continue; } if (!b) continue; const ext = (b.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg'); z.file(`${String(++i).padStart(2, '0')}-${it.code}.${ext}`, b); }
+      z.file('listing.txt', `${p.title}\nPrice: ${money(p.price)}\nSKU: ${it.code}\n\n${p.description}`); const blob = await z.generateAsync({ type: 'blob' });
+      if (await saveFile(`${it.code}-photos.zip`, blob)) logAct('LT', 'downloaded the photo packet for', it.code, it.title, `${i} photos`);
+    } catch (e) { toast('Couldn’t build the zip in this view.', 'err'); }
+  },
+  pkPush: async el => {
+    const it = S.items[el.dataset.code]; if (!ShopifyAdapter.configured()) return go('#/settings'); const p = packetOf(it);
+    if (!p.title) return toast('Add a listing title.', 'err'); if (!(p.price > 0)) return toast('Enter a valid listing price.', 'err');
+    try { let lt = (it.packet || {}).code; if (!lt) { lt = await nextCode('LT'); await write(() => ref('items/' + it.code).update({ packet: { code: lt } })); }
+      const res = await ShopifyAdapter.pushDraft({ title: p.title, descriptionHtml: descHtml(p.description), price: p.price.toFixed(2), sku: it.code, productType: it.category, vendor: p.title.split(' ')[0], tags: ['obsidian-vault', it.code], photos: p.photos.filter(id => !/^(local|fs)-/.test(String(id))).map((id, i) => ({ url: new URL(photoUrl(id), location.href).href, alt: `${p.title} photo ${i + 1}` })), productId: (it.packet || {}).shopifyId || null });
+      await write(() => ref('items/' + it.code).update({ packet: { shopifyId: String(res.id || ''), shopifyUrl: String(res.adminUrl || '') }, status: it.status === 'prep' ? 'list' : it.status }));
+      logAct('LT', (it.packet || {}).shopifyId ? 'updated the Shopify draft for' : 'created a Shopify draft for', lt, it.title, S.settings.shopify.store || '', [it.code]); toast('Shopify draft saved.');
+    } catch (e) { toast('The Shopify relay didn’t accept the draft. Check the relay URL in Settings — your packet is still saved here.', 'err'); }
+  },
+  // intake
+  inMulti: el => { S.ui.intake.multi = el.dataset.v === '1'; if (!S.ui.intake.multi) S.ui.intake.f.qty = 1; render(); },
+  inCond: el => { S.ui.intake.f.condition = el.dataset.v; render(); },
+  inBy: el => { S.ui.intake.by = el.dataset.v; render(); },
+  inAdd: () => { const N = S.ui.intake; const e = validItem(N.f); if (e) { N.err = e; return render(); } if (N.f.serial.trim() && N.items.some(x => x.serial.trim() === N.f.serial.trim())) { N.err = 'This serial / IMEI is already in the purchase.'; return render(); } N.items.push({ ...N.f }); N.f = blankForm(N.f.category); N.err = ''; render(); },
+  cartDel: el => { S.ui.intake.items.splice(+el.dataset.i, 1); render(); },
+  inNext: () => {
+    const N = S.ui.intake; N.err = '';
+    if (N.step === 1) { const filled = N.f.title.trim() || num(N.f.cost); if (filled) { const e = validItem(N.f); if (e) { N.err = e; return render(); } if (!N.multi) N.items = []; N.items.push({ ...N.f }); N.f = blankForm(N.f.category); } if (!N.items.length) { N.err = 'Add at least one item to the purchase.'; return render(); } N.step = 2; }
+    else if (N.step === 2) { if (N.custMode === 'existing' && !N.customerId) { N.err = 'Choose the returning customer, or switch to New customer.'; return render(); } if (N.custMode === 'new') { N.customerId = null; if (!N.c.name.trim() || !N.c.phone.trim()) { N.err = 'Enter the customer name and phone number.'; return render(); } if (N.c.email && !/^\S+@\S+\.\S+$/.test(N.c.email)) { N.err = 'Enter a valid email or leave it blank.'; return render(); } } N.step = 3; }
+    render(); window.scrollTo(0, 0);
+  },
+  inBack: () => { const N = S.ui.intake; N.step = Math.max(1, N.step - 1); N.err = ''; render(); },
+  inGo: el => { S.ui.intake.step = +el.dataset.v; render(); },
+  inCancel: async () => { if (await confirmBox({ title: 'Discard this purchase?', body: 'The items and customer details you entered will be cleared.', ok: 'Discard', danger: 1 })) { S.ui.intake = null; go('#/dashboard'); } },
+  inCust: el => { const N = S.ui.intake; N.custMode = el.dataset.v; if (el.dataset.v === 'new') N.customerId = null; N.err = ''; render(); },
+  inPickCust: el => { const N = S.ui.intake; N.customerId = el.dataset.code; N.custMode = 'existing'; N.custQ = ''; N.err = ''; render(); },
+  inSrc: el => { S.ui.intake.c.source = el.dataset.v; render(); },
+  inPay: el => { S.ui.intake.method = el.dataset.v; render(); },
+  inConfirm: el => { S.ui.intake.confirm = el.checked; render(); },
+  inDone: () => completeIntake(),
+  custIntake: el => { S.ui.intake = newIntake(); S.ui.intake.customerId = el.dataset.code; S.ui.intake.custMode = 'existing'; go('#/intake'); },
+  // sale
+  sChan: el => { const s = S.ui.sale; s.channel = el.dataset.v; s.feesTouched = el.dataset.v === 'Other' ? s.feesTouched : false; s.ship = el.dataset.v === 'Local' ? '0' : (num(s.ship) ? s.ship : String(S.settings.shipFlat || 0)); autoFees(s); render(); },
+  sSave: () => completeSale(),
+  // customers
+  custSel: el => { S.ui.cust.sel = el.dataset.code; render(); },
+  custNew: () => { S.modal = { kind: 'cust', d: { name: '', phone: '', email: '', source: 'Walk-in' } }; render(); },
+  custSave: async () => { const M = S.modal, c = M.d; if (!c.name.trim() || !c.phone.trim()) { M.err = 'Enter the name and phone number.'; return render(); } M.busy = true; render(); try { const cu = await nextCode('CU'); await write(() => ref('customers/' + cu).set({ code: cu, name: c.name.trim(), phone: c.phone.trim(), email: c.email.trim(), source: c.source, notes: '', createdAt: nowISO(), by: S.owner })); logAct('CU', 'added customer', cu, c.name.trim(), c.source); S.ui.cust.sel = cu; S.modal = null; render(); toast(`Contact ${cu} saved.`); } catch (e) { M.busy = false; M.err = 'Could not save. Try again.'; render(); } },
+  // books
+  txNew: () => openTx(null),
+  txEdit: el => openTx(S.txs[el.dataset.code]),
+  txDir: el => { S.modal.d.dir = el.dataset.v; render(); },
+  txBy: el => { S.modal.d.by = el.dataset.v; render(); },
+  txSave: async () => {
+    const M = S.modal, t = M.d; const amt = num(t.amt);
+    if (!t.desc.trim() || !t.date || !(amt > 0)) { M.err = 'Enter a description, date and an amount greater than zero.'; return render(); }
+    M.busy = true; render();
+    try {
+      const signed = t.dir === 'out' ? -amt : amt; const body = { date: t.date, desc: t.desc.trim(), amount: +signed.toFixed(2), category: t.category, method: t.method, by: t.by, payee: (t.payee || '').trim(), ref: (t.ref || '').trim(), tags: (t.tags || '').trim(), notes: (t.notes || '').trim(), updatedAt: nowISO() };
+      if (t.code) { const old = S.txs[t.code]; await write(() => ref('txs/' + t.code).update(body)); logAct('TX', 'edited transaction', t.code, body.desc, '', [], money(old.amount, 1), money(body.amount, 1)); }
+      else { const tx = await nextCode('TX'); await write(() => ref('txs/' + tx).set({ code: tx, link: '', ...body, createdAt: nowISO() })); logAct('TX', 'logged transaction', tx, body.desc, `${signed < 0 ? 'Money out' : 'Money in'} · ${money(signed, 1)} · ${body.method}`); }
+      S.modal = null; render(); toast('Financial record saved.');
+    } catch (e) { M.busy = false; M.err = 'Could not save the financial entry.'; render(); }
+  },
+  txDel: async () => { const t = S.modal.d; const keep = S.modal; if (!await confirmBox({ title: `Delete ${t.code}?`, body: 'This manually logged transaction is removed. The deletion is recorded in Activity.', ok: 'Delete', danger: 1 })) { S.modal = keep; return render(); } try { await write(() => ref('txs/' + t.code).delete()); logAct('TX', 'deleted transaction', t.code, t.desc, money(S.txs[t.code] ? S.txs[t.code].amount : 0, 1)); toast('Transaction deleted.'); } catch (e) {} },
+  // activity
+  actType: el => { S.ui.act.type = el.dataset.v; render(); },
+  actWho: el => { S.ui.act.who = el.dataset.v; render(); },
+  // settings
+  shMode: async el => { await saveSetting({ shopify: { ...S.settings.shopify, mode: el.dataset.v } }); },
+  binAdd: async () => { const v = ($('#bin-new').value || '').trim().toUpperCase(); if (!v) return; if (S.settings.bins.includes(v)) return toast('That bin already exists.', 'err'); await saveSetting({ bins: [...S.settings.bins, v] }); logAct('AJ', 'added storage bin', '', v); },
+  binDel: async el => { const b = el.dataset.v; const n = itemsArr().filter(i => i.bin === b && STOCK.includes(i.status)).length; if (n && !await confirmBox({ title: `Remove bin ${b}?`, body: `${n} item${n > 1 ? 's are' : ' is'} still assigned to it. They keep the label until you move them.`, ok: 'Remove', danger: 1 })) return; await saveSetting({ bins: S.settings.bins.filter(x => x !== b) }); },
+  backup: () => backup(),
+  csvItems: () => saveFile(`vault-items-${localISO()}.csv`, csvItems()),
+  csvTx: () => saveFile(`vault-transactions-${localISO()}.csv`, csvTx()),
+  csvCust: () => saveFile(`vault-customers-${localISO()}.csv`, csvCust()),
+  csvAct: () => saveFile(`vault-activity-${localISO()}.csv`, csvAct()),
+  usage: async () => { try { const r = await S.assets.list(); const u = r.usage; $('#usage').innerHTML = `Photo storage: <span class="mono">${(u.bytes / 1048576).toFixed(1)} MB</span> of <span class="mono">${(u.maxBytes / 1048576).toFixed(0)} MB</span> · ${u.files} of ${u.maxFiles} files`; } catch (e) { toast('Couldn’t read storage usage.', 'err'); } },
+  // firebase account
+  fbSignIn: async () => { const L = S.login; if (!L.email.trim() || !L.pw) { L.err = 'Enter your email and password.'; return render(); } L.busy = true; L.err = ''; render(); try { await S.fb.signIn(L.email.trim(), L.pw); L.pw = ''; L.busy = false; } catch (e) { L.busy = false; const c = String(e.code || ''); L.err = c.includes('invalid') || c.includes('wrong') || c.includes('user-not-found') ? 'Email or password is incorrect.' : c.includes('too-many') ? 'Too many attempts. Wait a minute and try again.' : c.includes('network') ? 'No connection. Check the internet and try again.' : 'Could not sign in: ' + (e.message || c); render(); } },
+  fbReset: async () => { const L = S.login; if (!L.email.trim()) { L.err = 'Enter your email first.'; return render(); } try { await S.fb.resetPw(L.email.trim()); L.info = 'Password reset email sent.'; L.err = ''; } catch (e) { L.err = 'Could not send the reset email.'; } render(); },
+  fbSignOut: async () => { if (await confirmBox({ title: 'Sign this device out?', body: 'You’ll need the vault email and password to sign back in on this device.', ok: 'Sign out' })) { setOwner(null); await S.fb.signOut(); location.reload(); } },
+  // modal
+  mClose: (el, ev) => { if (el.dataset.self && ev.target !== el) return; const M = S.modal; S.modal = null; if (M && M.resolve) M.resolve(false); render(); },
+  mOk: () => { const M = S.modal; S.modalVal = M.val || ''; S.modal = null; render(); if (M.resolve) M.resolve(true); }
+};
+async function saveSetting(patch) { try { const s = await ref('meta/settings').get(); if (s.exists) await write(() => ref('meta/settings').update(patch), 'settings'); else await write(() => ref('meta/settings').set({ ...DEFAULT_SETTINGS, ...patch }), 'settings'); } catch (e) {} }
+
+document.addEventListener('click', ev => {
+  S.lastAct = Date.now();
+  const el = ev.target.closest('[data-act]'); if (!el) return;
+  const fn = ACT[el.dataset.act]; if (!fn) return;
+  if (el.dataset.self && ev.target !== el) return;
+  if (el.tagName === 'A' && el.getAttribute('href') && !['invTab'].includes(el.dataset.act)) return;
+  if (el.tagName !== 'INPUT') ev.preventDefault();
+  fn(el, ev);
+});
+document.addEventListener('input', ev => {
+  S.lastAct = Date.now(); const el = ev.target;
+  if (el.dataset.bind) {
+    const p = el.dataset.bind; const path = p.startsWith('ui.') ? p : p.startsWith('modal') ? p : p;
+    if (p.startsWith('lock.')) setPath(p, el.value.replace(/\D/g, '').slice(0, 8));
+    else if (p.startsWith('login.')) { S.login[p.split('.')[1]] = el.value; return; }
+    else setPath(path, el.value);
+    if (p === 'ui.sale.price') autoFees(S.ui.sale); if (p === 'ui.sale.fees') S.ui.sale.feesTouched = true; if (p === 'modal.val') S.modal.val = el.value;
+    if (p.startsWith('ui.master')) S.ui.master.page = 0;
+    if (el.tagName !== 'SELECT' && !p.startsWith('lock.') && !p.startsWith('modal')) renderSoon();
+  }
+  if (el.dataset.ifield) { (S.ui.edit[el.dataset.code] = S.ui.edit[el.dataset.code] || {})[el.dataset.ifield] = el.value; }
+});
+document.addEventListener('change', ev => {
+  const el = ev.target;
+  if (el.dataset.bind && el.tagName === 'SELECT') { setPath(el.dataset.bind, el.value); if (el.dataset.bind === 'ui.sale.code') { S.ui.sale = newSale(el.value); } if (S.modal && el.dataset.bind.startsWith('modal')) return; render(); }
+  if (el.dataset.ifield) commitItemField(el.dataset.code, el.dataset.ifield, el.value);
+  if (el.dataset.cfield) { const c = S.customers[el.dataset.code]; const f = el.dataset.cfield; const v = el.value.trim(); if (c && String(c[f] || '') !== v) write(() => ref('customers/' + c.code).update({ [f]: v, updatedAt: nowISO() })).then(() => logAct('CU', 'edited ' + f + ' of', c.code, c.name, '', [], f === 'notes' ? '' : String(c[f] || '—'), f === 'notes' ? '' : v)).catch(() => {}); }
+  if (el.dataset.sfield) { const path = el.dataset.sfield; let v = el.value; if (['feePct', 'shipFlat', 'riskPct', 'autoLock'].includes(path)) v = num(v); if (path.includes('.')) { const [a, b] = path.split('.'); saveSetting({ [a]: { ...S.settings[a], [b]: typeof v === 'string' ? v.trim() : v } }); } else saveSetting({ [path]: v }); }
+  if (el.dataset.upload) { uploadPhotos(el.dataset.upload, el.files); el.value = ''; }
+  if (el.dataset.restore) { const f = el.files[0]; el.value = ''; if (f) restore(f); }
+});
+document.addEventListener('keydown', ev => {
+  S.lastAct = Date.now();
+  if (!S.owner && S.pins && S.pins.o1 && !(ev.target && ev.target.tagName === 'INPUT')) { if (/^\d$/.test(ev.key)) ACT.key({ dataset: { k: ev.key } }); else if (ev.key === 'Backspace') ACT.key({ dataset: { k: '⌫' } }); else if (ev.key === 'Enter') ACT.unlock(); }
+  if (ev.key === 'Escape' && S.modal) ACT.mClose({ dataset: {} }, ev);
+  if (ev.key === 'Enter' && ev.target.dataset && ev.target.dataset.ifield && ev.target.tagName === 'INPUT') ev.target.blur();
+  if (ev.key === 'Enter' && S.needLogin && ev.target.dataset && String(ev.target.dataset.bind || '').startsWith('login.')) ACT.fbSignIn();
+});
+document.addEventListener('dragover', ev => { const z = ev.target.closest && ev.target.closest('[data-drop]'); if (z) { ev.preventDefault(); z.classList.add('over'); } });
+document.addEventListener('dragleave', ev => { const z = ev.target.closest && ev.target.closest('[data-drop]'); if (z) z.classList.remove('over'); });
+document.addEventListener('drop', ev => { const z = ev.target.closest && ev.target.closest('[data-drop]'); if (z) { ev.preventDefault(); z.classList.remove('over'); uploadPhotos(z.dataset.drop, ev.dataTransfer.files); } });
+// commit an inline item edit even if the page is closed mid-edit
+window.addEventListener('pagehide', () => { const a = document.activeElement; if (a && a.dataset && a.dataset.ifield) commitItemField(a.dataset.code, a.dataset.ifield, a.value); });
+
+boot().catch(e => { console.error(e); $('#app').innerHTML = '<div class="skel">The vault could not start. Reload the page.</div>'; });
+})();
+</script>
+</body>
+</html>
