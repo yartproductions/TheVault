@@ -5,7 +5,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function isVaultUser() {
       return request.auth != null
-        && request.auth.token.email in ['owner1@example.com', 'owner2@example.com'];
+        && request.auth.token.email in ['paulckinckay@gmail.com', 'kohlindersjohn@gmail.com'];
     }
     match /{document=**} {
       allow read, write: if isVaultUser();
