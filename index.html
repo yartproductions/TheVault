@@ -1237,11 +1237,13 @@ const ACT = {
   pkPush: async el => {
     const it = S.items[el.dataset.code]; if (!ShopifyAdapter.configured()) return go('#/settings'); const p = packetOf(it);
     if (!p.title) return toast('Add a listing title.', 'err'); if (!(p.price > 0)) return toast('Enter a valid listing price.', 'err');
+    const productTab = window.open('', '_blank'); if (productTab) productTab.opener = null;
     try { let lt = (it.packet || {}).code; if (!lt) { lt = await nextCode('LT'); await write(() => ref('items/' + it.code).update({ packet: { code: lt } })); }
       const res = await ShopifyAdapter.pushDraft(it.code);
       await write(() => ref('items/' + it.code).update({ packet: { shopifyId: String(res.id || ''), shopifyUrl: String(res.adminUrl || '') }, status: it.status === 'prep' ? 'list' : it.status }));
+      if (productTab && res.adminUrl) productTab.location = res.adminUrl; else if (productTab) productTab.close();
       logAct('LT', (it.packet || {}).shopifyId ? 'updated the Shopify draft for' : 'created a Shopify draft for', lt, it.title, S.settings.shopify.store || '', [it.code]); toast('Shopify draft saved.');
-    } catch (e) { toast((e && e.message) || 'Shopify could not save the draft. Your packet is still safe in the Vault.', 'err'); }
+    } catch (e) { if (productTab) productTab.close(); toast((e && e.message) || 'Shopify could not save the draft. Your packet is still safe in the Vault.', 'err'); }
   },
   // intake
   inMulti: el => { S.ui.intake.multi = el.dataset.v === '1'; if (!S.ui.intake.multi) S.ui.intake.f.qty = 1; render(); },
