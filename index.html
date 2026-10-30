@@ -264,7 +264,9 @@ const S = {
   },
   modal: null, toasts: [], lastAct: Date.now()
 };
-const ownerName = o => (S.settings.owners || {})[o] || (o === 'o2' ? 'Owner 2' : o === 'sys' ? 'System' : 'Owner 1');
+const ownerName = o => o && o.startsWith('m_') ? ((S.members[o.slice(2)] || {}).displayName || (S.members[o.slice(2)] || {}).email || 'Member') : (S.settings.owners || {})[o] || (o === 'o2' ? 'Owner 2' : o === 'sys' ? 'System' : 'Owner 1');
+const isOwnerProfile = o => o === 'o1' || o === 'o2';
+const memberProfiles = () => Object.entries(S.members).filter(([, m]) => m.active !== false && m.role === 'member').map(([uid, m]) => ({ id: 'm_' + uid, name: m.displayName || m.email || 'Member' }));
 
 // ════════════════════════════════════════════════════════════════
 //  BACKENDS — the app talks to one interface, whichever is active:
@@ -516,6 +518,7 @@ function checkIdle() { const m = +S.settings.autoLock || 0; if (S.owner && m > 0
 function onRoute() {
   const h = (location.hash || '#/dashboard').slice(2).split('/');
   S.route = { page: h[0] || 'dashboard', arg: decodeURIComponent(h.slice(1).join('/') || '') };
+  if (S.owner && !isOwnerProfile(S.owner) && S.route.page === 'settings') { S.route = { page: 'dashboard', arg: '' }; history.replaceState(null, '', '#/dashboard'); }
   if (S.route.page === 'intake' && !S.ui.intake) S.ui.intake = newIntake();
   if (S.route.page === 'sell') S.ui.sale = newSale(S.route.arg);
   window.scrollTo(0, 0); render();
@@ -571,7 +574,7 @@ function lockScreen() {
     const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map(k => `<button type="button" class="key ${/\d/.test(k) ? '' : 'g'}" data-act="key" data-k="${k}" aria-label="${k === 'C' ? 'Clear' : k === '⌫' ? 'Delete' : k}">${k === 'C' ? 'Clear' : k}</button>`).join('');
     card = `<div class="card" style="width:100%;max-width:460px;padding:34px;display:flex;flex-direction:column;gap:24px">
       <div><div class="eyebrow">WELCOME BACK</div><h1 style="margin:8px 0 0;font-size:28px;letter-spacing:-.8px">Unlock your workspace</h1><p class="mut2" style="margin:8px 0 0;font-size:14px">Choose your profile and enter your PIN.</p></div>
-      <div class="grid g2">${['o1', 'o2'].map((o, i) => `<button type="button" class="pickrow ${L.who === o ? 'on' : ''}" data-act="pickWho" data-o="${o}"><span class="av" style="width:40px;height:40px;background:${OWNER_COLORS[o][0]};color:${OWNER_COLORS[o][1]}">${i + 1}</span><span><span style="display:block;font-weight:600">${esc(ownerName(o))}</span><span class="sm mut2">Owner</span></span></button>`).join('')}</div>
+      <div class="grid g2">${['o1', 'o2'].map((o, i) => `<button type="button" class="pickrow ${L.who === o ? 'on' : ''}" data-act="pickWho" data-o="${o}"><span class="av" style="width:40px;height:40px;background:${OWNER_COLORS[o][0]};color:${OWNER_COLORS[o][1]}">${i + 1}</span><span><span style="display:block;font-weight:600">${esc(ownerName(o))}</span><span class="sm mut2">Owner</span></span></button>`).join('')}${memberProfiles().map(m => `<button type="button" class="pickrow ${L.who === m.id ? 'on' : ''}" data-act="pickWho" data-o="${esc(m.id)}"><span class="av" style="width:40px;height:40px;background:#13243A;color:#8EC3FF">${esc(m.name[0].toUpperCase())}</span><span><span style="display:block;font-weight:600">${esc(m.name)}</span><span class="sm mut2">Member</span></span></button>`).join('')}</div>
       <div style="display:flex;flex-direction:column;gap:10px"><div class="sm mut" style="display:flex;justify-content:space-between"><span>PIN for ${esc(ownerName(L.who))}</span><span class="mut2">4–8 digits · or type</span></div>
       <div style="display:flex;gap:10px;height:52px;align-items:center;justify-content:center;border:1px solid #222C28;border-radius:14px;background:#0F1413">${dots}</div></div>
       <div class="grid g3" style="gap:10px">${keys}</div>
@@ -586,12 +589,12 @@ function lockScreen() {
 const NAV = [['dashboard', 'Dashboard', 'dash'], ['inventory', 'Inventory Vault', 'box'], ['master', 'Master Vault', 'db'], ['customers', 'Customer Vault', 'users'], ['books', 'Bookkeeping', 'book'], ['activity', 'Activity', 'pulse'], ['settings', 'Settings', 'sliders']];
 const NAV_ALIAS = { item: 'inventory', sell: 'inventory', intake: 'inventory' };
 function shell() {
-  const p = S.route.page; const on = NAV_ALIAS[p] || p; const o = S.owner;
+  const requested = S.route.page; const p = requested === 'settings' && !isOwnerProfile(S.owner) ? 'dashboard' : requested; const on = NAV_ALIAS[p] || p; const o = S.owner; const member = !isOwnerProfile(o);
   const side = `<aside class="side">
     <div class="brand"><span class="gem" style="color:#3DDC97">${ic('gem', 20, 1.6)}</span>Obsidian Gadget</div>
     <a class="btn pri" href="#/intake" style="height:42px">${ic('plus', 16, 2.2)}New Intake</a>
-    <nav class="nav">${NAV.map(([k, l, i]) => `<a href="#/${k}" class="${on === k ? 'on' : ''}">${ic(i)}${l}</a>`).join('')}</nav>
-    <div class="who"><span class="av" style="width:36px;height:36px;background:${OWNER_COLORS[o][0]};color:${OWNER_COLORS[o][1]}">${o === 'o1' ? 1 : 2}</span><div style="flex-grow:1;min-width:0"><div style="font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis">${esc(ownerName(o))}</div><div class="sm mut2">Owner</div></div><button class="btn ic" style="width:36px;height:36px" data-act="lock" aria-label="Lock / switch user" title="Lock / switch user">${ic('lock', 16)}</button></div>
+    <nav class="nav">${NAV.filter(([k]) => k !== 'settings' || !member).map(([k, l, i]) => `<a href="#/${k}" class="${on === k ? 'on' : ''}">${ic(i)}${l}</a>`).join('')}</nav>
+    <div class="who"><span class="av" style="width:36px;height:36px;background:${member ? '#13243A' : OWNER_COLORS[o][0]};color:${member ? '#8EC3FF' : OWNER_COLORS[o][1]}">${member ? esc(ownerName(o)[0].toUpperCase()) : o === 'o1' ? 1 : 2}</span><div style="flex-grow:1;min-width:0"><div style="font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis">${esc(ownerName(o))}</div><div class="sm mut2">${member ? 'Member' : 'Owner'}</div></div><button class="btn ic" style="width:36px;height:36px" data-act="lock" aria-label="Lock / switch user" title="Lock / switch user">${ic('lock', 16)}</button></div>
     <div class="sync" id="syncline"></div>
   </aside>`;
   const PAGES = { dashboard: pDashboard, inventory: pInventory, master: pMaster, item: pItem, intake: pIntake, sell: pSell, customers: pCustomers, books: pBooks, activity: pActivity, settings: pSettings };
@@ -929,7 +932,7 @@ function pSettings() {
       <p class="sm mut2" style="margin:0;line-height:1.5">Names show everywhere: activity, bookkeeping, intake. PINs are hashed and stored privately to your signed-in account.</p></section>
 
     ${S.mode === 'firebase' ? `<section class="card pad" style="display:flex;flex-direction:column;gap:16px"><div><h2>Vault access accounts</h2><div class="sm mut2" style="margin-top:4px">Firebase sign-ins allowed to open this vault. Owner PINs still control the workspace identity.</div></div>
-      <div style="display:flex;flex-direction:column;gap:8px">${members.length ? members.map(([uid, m]) => `<div class="card pad-s" style="background:var(--card2);display:flex;align-items:center;gap:10px"><span class="av" style="width:30px;height:30px;background:${m.active === false ? '#262D2A' : '#13243A'};color:${m.active === false ? '#8C9C95' : '#8EC3FF'}">${esc((m.displayName || m.email || '?')[0].toUpperCase())}</span><div style="min-width:0;flex:1"><div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis">${esc(m.displayName || m.email)}</div><div class="sm mut2 mono" style="overflow:hidden;text-overflow:ellipsis">${esc(m.email || '')} · ${esc(m.role || 'member')}${m.active === false ? ' · disabled' : ''}</div></div>${canManage && uid !== S.uid ? `<button class="btn sm" data-act="memberToggle" data-uid="${esc(uid)}" data-active="${m.active === false ? '1' : '0'}">${m.active === false ? 'Enable' : 'Disable'}</button>` : ''}</div>`).join('') : '<div class="sm mut2">Loading accounts…</div>'}</div>
+      <div style="display:flex;flex-direction:column;gap:8px">${members.length ? members.map(([uid, m]) => `<div class="card pad-s" style="background:var(--card2);display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="av" style="width:30px;height:30px;background:${m.active === false ? '#262D2A' : '#13243A'};color:${m.active === false ? '#8C9C95' : '#8EC3FF'}">${esc((m.displayName || m.email || '?')[0].toUpperCase())}</span><div style="min-width:180px;flex:1"><div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis">${esc(m.displayName || m.email)}</div><div class="sm mut2 mono" style="overflow:hidden;text-overflow:ellipsis">${esc(m.email || '')} · ${esc(m.role || 'member')}${m.active === false ? ' · disabled' : ''}</div></div>${canManage && m.role === 'member' ? `<input class="in mono" id="member-pin-${esc(uid)}" type="password" inputmode="numeric" maxlength="8" placeholder="4–8 digit PIN" style="width:140px"><button class="btn sm" data-act="memberPin" data-uid="${esc(uid)}">Set PIN</button>` : ''}${canManage && uid !== S.uid ? `<button class="btn sm" data-act="memberToggle" data-uid="${esc(uid)}" data-active="${m.active === false ? '1' : '0'}">${m.active === false ? 'Enable' : 'Disable'}</button>` : ''}</div>`).join('') : '<div class="sm mut2">Loading accounts…</div>'}</div>
       ${canManage ? `<div class="grid g2 stack"><div class="fld"><label for="member-name">Name</label><input class="in" id="member-name" placeholder="Team member"></div><div class="fld"><label for="member-email">Email</label><input class="in" id="member-email" type="email" placeholder="name@example.com"></div><div class="fld"><label for="member-role">Access level</label><select class="sel" id="member-role"><option value="member">Member</option><option value="owner">Owner</option></select></div><div class="fld" style="justify-content:flex-end"><button class="btn pri" data-act="memberInvite">${ic('plus', 16, 2)}Add account</button></div></div>` : '<div class="notice">Only a vault owner can add or disable accounts.</div>'}
       ${invite ? `<div class="notice info" style="flex-direction:column;align-items:stretch"><b>Account added — send this one-time setup link to ${esc(invite.email)}</b><textarea class="ta mono" id="member-link" rows="3" readonly>${esc(invite.link)}</textarea><div><button class="btn sm" data-act="memberCopy">Copy setup link</button></div></div>` : ''}</section>` : ''}
 
@@ -1197,7 +1200,7 @@ const ACT = {
     const L = S.lock; if (L.until > Date.now() || L.pin.length < 4) return; const rec = S.pins && S.pins[L.who];
     if (!rec) { L.err = 'No PIN set for this owner.'; return render(); }
     const h = await hashPin(L.pin, rec.salt);
-    if (h.hash === rec.hash) { L.fails = 0; L.pin = ''; L.err = ''; setOwner(L.who); S.lastAct = Date.now(); render(); logAct('SYS', 'unlocked the workspace', 'LOGIN'); }
+    if (h.hash === rec.hash) { L.fails = 0; L.pin = ''; L.err = ''; setOwner(L.who); S.lastAct = Date.now(); if (!isOwnerProfile(L.who) && S.route.page === 'settings') return go('#/dashboard'); render(); logAct('SYS', 'unlocked the workspace', 'LOGIN'); }
     else { L.fails++; L.pin = ''; L.err = `Incorrect PIN for ${ownerName(L.who)}.`; if (L.fails >= 5) { L.until = Date.now() + 60000; L.fails = 0; const t = setInterval(() => { render(); if (L.until <= Date.now()) clearInterval(t); }, 1000); } render(); }
   },
   setPins: async () => {
@@ -1205,10 +1208,10 @@ const ACT = {
     if (!ok(s.p1) || !ok(s.p2)) { L.err = 'Use 4–8 digits for each PIN.'; return render(); }
     if (s.p1 !== s.c1 || s.p2 !== s.c2) { L.err = 'PINs and confirmations don’t match.'; return render(); }
     if (s.p1 === s.p2) { L.err = 'Each owner needs a different PIN.'; return render(); }
-    try { await savePins({ o1: await hashPin(s.p1), o2: await hashPin(s.p2) }); L.setup = { p1: '', c1: '', p2: '', c2: '' }; L.err = ''; setOwner('o1'); S.lastAct = Date.now(); render(); logAct('SYS', 'set up owner PINs', 'PINS'); }
+    try { await savePins({ ...(S.pins || {}), o1: await hashPin(s.p1), o2: await hashPin(s.p2) }); L.setup = { p1: '', c1: '', p2: '', c2: '' }; L.err = ''; setOwner('o1'); S.lastAct = Date.now(); render(); logAct('SYS', 'set up owner PINs', 'PINS'); }
     catch (e) { L.err = 'Could not save PINs. Try again.'; render(); }
   },
-  resetPins: async () => { if (await confirmBox({ title: 'Change both PINs?', body: 'You will set new PINs for both owners right now.', ok: 'Continue' })) { S.pins = null; setOwner(null); render(); } },
+  resetPins: async () => { if (await confirmBox({ title: 'Change both PINs?', body: 'You will set new PINs for both owners right now.', ok: 'Continue' })) { S.pins = Object.fromEntries(Object.entries(S.pins || {}).filter(([k]) => k.startsWith('m_'))); setOwner(null); render(); } },
   invTab: el => { S.ui.inv.tab = el.dataset.tab; if (S.route.page !== 'inventory') go('#/inventory'); else render(); },
   mTab: el => { S.ui.master.tab = el.dataset.tab; S.ui.master.page = 0; render(); },
   mPage: el => { S.ui.master.page += +el.dataset.d; render(); },
@@ -1303,6 +1306,12 @@ const ACT = {
     catch (e) { toast((e && e.message) || 'Could not add that account.', 'err'); }
   },
   memberCopy: async () => { try { await navigator.clipboard.writeText((S.ui.memberInvite || {}).link || ''); toast('Setup link copied.'); } catch (e) { const x = $('#member-link'); if (x) { x.select(); document.execCommand('copy'); toast('Setup link copied.'); } } },
+  memberPin: async el => {
+    const input = document.getElementById('member-pin-' + el.dataset.uid); const pin = input ? input.value : '';
+    if (!/^\d{4,8}$/.test(pin)) return toast('Use a 4–8 digit member PIN.', 'err');
+    try { await savePins({ ...(S.pins || {}), ['m_' + el.dataset.uid]: await hashPin(pin) }); input.value = ''; toast('Member PIN saved.'); render(); }
+    catch (e) { toast('Could not save the member PIN.', 'err'); }
+  },
   memberToggle: async el => {
     const active = el.dataset.active === '1';
     if (!await confirmBox({ title: `${active ? 'Enable' : 'Disable'} this account?`, body: active ? 'They will be able to sign in and use the Vault again.' : 'They will be signed out and blocked from the Vault.', ok: active ? 'Enable' : 'Disable', danger: active ? 0 : 1 })) return;
