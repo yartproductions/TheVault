@@ -51,6 +51,24 @@ exports.ensureVaultMembership = onCall(async request => {
   return { role: member.role };
 });
 
+// Firebase Auth errors otherwise reach the Vault as a bare "internal" error.
+function explainAuthError(error, step) {
+  const code = String(error && (error.code || error.errorInfo && error.errorInfo.code) || '');
+  const raw = String(error && error.message || '');
+  console.error(`createVaultMember failed while ${step}:`, code, raw);
+  if (error instanceof HttpsError) return error;
+  if (/unauthorized-continue-uri|invalid-continue-uri|domain/i.test(code + raw))
+    return new HttpsError('failed-precondition', 'Firebase blocked the setup link. In Firebase → Authentication → Settings → Authorized domains, add yartproductions.github.io.');
+  if (/insufficient-permission|permission|PERMISSION_DENIED|403/i.test(code + raw))
+    return new HttpsError('failed-precondition', 'The Vault backend is not allowed to manage logins. In Google Cloud → IAM, give the functions service account the "Firebase Authentication Admin" role.');
+  if (/operation-not-allowed|CONFIGURATION_NOT_FOUND/i.test(code + raw))
+    return new HttpsError('failed-precondition', 'Email/Password sign-in is turned off. Turn it on in Firebase → Authentication → Sign-in method.');
+  if (/email-already-exists/i.test(code)) return new HttpsError('already-exists', 'That email already has a login. Try adding it again.');
+  if (/invalid-email/i.test(code)) return new HttpsError('invalid-argument', 'Enter a valid email address.');
+  if (/too-many|quota|RESOURCE_EXHAUSTED/i.test(code + raw)) return new HttpsError('resource-exhausted', 'Firebase is rate-limiting new accounts. Wait a few minutes and try again.');
+  return new HttpsError('internal', `Could not add the account while ${step}: ${code || raw || 'unknown error'}`);
+}
+
 exports.createVaultMember = onCall(async request => {
   const owner = await ownerFor(request);
   const email = String(request.data && request.data.email || '').trim().toLowerCase();
@@ -60,26 +78,39 @@ exports.createVaultMember = onCall(async request => {
 
   let user;
   try {
-    user = await auth.getUserByEmail(email);
+    try {
+      user = await auth.getUserByEmail(email);
+    } catch (error) {
+      if (!/user-not-found/.test(String(error && error.code))) throw error;
+      user = await auth.createUser({
+        email,
+        displayName: displayName || undefined,
+        password: crypto.randomBytes(24).toString('base64url'),
+        emailVerified: false
+      });
+    }
+    await auth.updateUser(user.uid, { disabled: false, displayName: displayName || user.displayName || undefined });
   } catch (error) {
-    if (error.code !== 'auth/user-not-found') throw error;
-    user = await auth.createUser({
-      email,
-      displayName: displayName || undefined,
-      password: crypto.randomBytes(24).toString('base64url'),
-      emailVerified: false
-    });
+    throw explainAuthError(error, 'creating the login');
   }
-  await auth.updateUser(user.uid, { disabled: false, displayName: displayName || user.displayName || undefined });
-  await db.doc(`members/${user.uid}`).set({
-    email,
-    displayName: displayName || user.displayName || email.split('@')[0],
-    role,
-    active: true,
-    invitedBy: owner.uid,
-    updatedAt: FieldValue.serverTimestamp()
-  }, { merge: true });
-  const inviteLink = await auth.generatePasswordResetLink(email, { url: 'https://yartproductions.github.io/TheVault/' });
+  try {
+    await db.doc(`members/${user.uid}`).set({
+      email,
+      displayName: displayName || user.displayName || email.split('@')[0],
+      role,
+      active: true,
+      invitedBy: owner.uid,
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (error) {
+    throw explainAuthError(error, 'saving the member record');
+  }
+  let inviteLink;
+  try {
+    inviteLink = await auth.generatePasswordResetLink(email, { url: 'https://yartproductions.github.io/TheVault/' });
+  } catch (error) {
+    throw explainAuthError(error, 'making the password setup link');
+  }
   return { uid: user.uid, inviteLink };
 });
 
