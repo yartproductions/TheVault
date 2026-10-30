@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Obsidian Vault</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<script src="config.js?v=syslog-20261029"></script>
+<script src="config.js?v=intake-queue-20261029"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -521,7 +521,7 @@ function onRoute() {
   const h = (location.hash || '#/dashboard').slice(2).split('/');
   S.route = { page: h[0] || 'dashboard', arg: decodeURIComponent(h.slice(1).join('/') || '') };
   if (S.owner && !isOwnerProfile(S.owner) && S.route.page === 'settings') { S.route = { page: 'dashboard', arg: '' }; history.replaceState(null, '', '#/dashboard'); }
-  if (S.route.page === 'intake' && !S.ui.intake) S.ui.intake = newIntake();
+  if (S.route.page === 'intake' && !S.ui.intake) S.ui.intake = restoreIntake();
   if (S.route.page === 'sell') S.ui.sale = newSale(S.route.arg);
   window.scrollTo(0, 0); render();
 }
@@ -823,70 +823,80 @@ function saleCard(it) {
 }
 function histFor(code) { const out = []; Object.values(S.activity).forEach(ch => (ch.entries || []).forEach(e => { if (e.code === code || (e.links || []).includes(code)) out.push(e); })); return out.sort((a, b) => b.t.localeCompare(a.t)); }
 
-// ── INTAKE (3 steps) ──────────────────────────────────────────────
+// ── INTAKE (device card → queue → checkout) ───────────────────────
 const blankForm = cat => ({ category: cat || 'Smartphone', title: '', specs: '', serial: '', condition: 'Good', defect: '', qty: 1, cost: '', resale: '' });
-const newIntake = () => ({ step: 1, multi: false, by: S.owner || 'o1', items: [], f: blankForm(), custMode: 'new', custQ: '', customerId: null, c: { name: '', phone: '', email: '', source: 'Walk-in' }, method: 'Zelle', date: localISO(), ref: '', confirm: false, busy: false, err: '' });
+const newIntake = () => ({ by: S.owner || 'o1', items: [], f: blankForm(), editing: -1, custMode: 'new', custQ: '', customerId: null, c: { name: '', phone: '', email: '', source: 'Walk-in' }, method: 'Zelle', date: localISO(), ref: '', confirm: false, busy: false, err: '', ferr: '', flash: '' });
+// The queue survives a reload or switching pages, in this browser only.
+const INTAKE_KEY = 'ov.intake.v2';
+function saveIntakeDraft() { const N = S.ui.intake; try { if (!N || (!N.items.length && !N.f.title && !N.customerId && !N.c.name)) localStorage.removeItem(INTAKE_KEY); else localStorage.setItem(INTAKE_KEY, JSON.stringify({ ...N, busy: false, err: '', ferr: '', flash: '', confirm: false })); } catch (e) {} }
+function restoreIntake() { try { const d = JSON.parse(localStorage.getItem(INTAKE_KEY) || 'null'); if (d && Array.isArray(d.items)) return { ...newIntake(), ...d, f: { ...blankForm(), ...(d.f || {}) }, c: { ...newIntake().c, ...(d.c || {}) }, busy: false }; } catch (e) {} return newIntake(); }
+function clearIntakeDraft() { try { localStorage.removeItem(INTAKE_KEY); } catch (e) {} }
 function validItem(f) {
   if (!f.title.trim()) return 'Enter the item brand and model.';
   if (!f.defect.trim()) return 'Add a plain-English defect description (write "None found" if it is clean).';
   if (!(num(f.cost) > 0)) return 'Enter a valid purchase price.';
   if (!(num(f.resale) > 0)) return 'Enter a valid expected resale price.';
   const q = Math.round(num(f.qty)); if (q < 1 || q > 100) return 'Quantity must be a whole number from 1 to 100.';
-  if (f.serial.trim() && q > 1) return 'Serialized devices must be added individually.';
+  if (f.serial.trim() && q > 1) return 'Serialized devices must be added one at a time (quantity 1).';
   return '';
 }
 const reqLabel = (id, label, icon, req, extra = '') => `<label for="${id}"><span class="li ${req ? 'req' : ''}">${ic(icon, 14, 1.9)}</span>${label}${req ? ' <em>*</em>' : ''}${extra}</label>`;
+const qtyOf = x => Math.round(num(x.qty) || 1);
 function pIntake() {
-  const N = S.ui.intake || (S.ui.intake = newIntake()); const f = N.f;
-  const steps = ['Items', 'Customer', 'Payment'].map((l, i) => `<li class="${N.step === i + 1 ? 'on' : N.step > i + 1 ? 'done' : ''}"><span class="n">${N.step > i + 1 ? ic('check', 12, 3) : i + 1}</span>${l}</li>${i < 2 ? '<li class="ln" aria-hidden="true"></li>' : ''}`).join('');
-  const total = N.items.reduce((a, x) => a + num(x.cost) * Math.round(num(x.qty) || 1), 0);
-  const resale = N.items.reduce((a, x) => a + num(x.resale) * Math.round(num(x.qty) || 1), 0);
-  const units = N.items.reduce((a, x) => a + Math.round(num(x.qty) || 1), 0);
-  const cart = `<aside class="card pad col-side" style="gap:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Cart</h2><span class="sm mut2">${units} unit${units === 1 ? '' : 's'}</span></div>
-    ${N.items.length ? N.items.map((x, i) => `<div style="display:flex;gap:12px;align-items:flex-start;padding:12px;border-radius:12px;background:var(--card2);border:1px solid var(--line)">${catTile(x.category, 34, 9)}<div style="flex-grow:1;min-width:0"><div style="font-weight:500;font-size:14px">${esc(x.title)}</div><div class="sm mut2" style="margin-top:3px">${esc(x.condition)} · ${Math.round(num(x.qty))} × <span class="mono">${money0(x.cost)}</span></div></div>${N.step === 1 ? `<button class="btn ic sm" style="width:30px;height:30px" data-act="cartDel" data-i="${i}" aria-label="Remove ${esc(x.title)}">${ic('x', 14)}</button>` : ''}</div>`).join('') : '<div class="sm mut2" style="padding:12px;border:1px dashed #2A3632;border-radius:12px;text-align:center">The item in the form is added when you continue.</div>'}
-    <div style="display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:14px;font-size:14px"><div style="display:flex;justify-content:space-between"><span class="mut">Total purchase</span><span class="mono">${money(total)}</span></div><div style="display:flex;justify-content:space-between"><span class="mut">Expected resale</span><span class="mono">${money(resale)}</span></div>
-    <div class="glow" style="padding:14px;display:flex;justify-content:space-between;align-items:baseline;margin-top:6px"><span style="color:#9EE7BC">${N.step === 3 ? 'Pay the customer' : 'Gross spread'}</span><span class="mono" style="font-size:22px;color:#5FE6AC">${money(N.step === 3 ? total : resale - total)}</span></div></div>
+  const N = S.ui.intake || (S.ui.intake = restoreIntake()); const f = N.f;
+  saveIntakeDraft();
+  const total = N.items.reduce((a, x) => a + num(x.cost) * qtyOf(x), 0);
+  const resale = N.items.reduce((a, x) => a + num(x.resale) * qtyOf(x), 0);
+  const units = N.items.reduce((a, x) => a + qtyOf(x), 0);
+  const editing = N.editing >= 0;
+
+  // ── left: the device card
+  const card = `<section class="card pad" style="display:flex;flex-direction:column;gap:16px;border-radius:22px;${N.flash ? 'box-shadow:0 0 0 1px #2E6B50,0 18px 40px -24px #3DDC9788' : ''}">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><h2>${editing ? 'Edit device' : N.items.length ? 'Next device' : 'Device'}</h2>
+      ${N.flash ? `<span class="sm" style="color:#5FE6AC;display:inline-flex;align-items:center;gap:6px">${ic('check', 14, 2.4)}${esc(N.flash)}</span>` : '<span class="sm mut2">Press Enter to add</span>'}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap" role="radiogroup" aria-label="Category">${Object.keys(CATS).map(c => `<button class="fchip" style="${f.category === c ? 'border-color:#3DDC97;color:var(--tx);background:#12241D' : ''}" data-act="inCat" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+    <input class="in" id="n-title" data-bind="ui.intake.f.title" data-enter="inAdd" value="${esc(f.title)}" placeholder="Brand & model — e.g. Apple iPhone 14 Pro" aria-label="Brand and model" style="height:52px;font-size:17px;font-weight:500">
+    <div class="grid g2 stack" style="gap:12px"><input class="in" id="n-specs" data-bind="ui.intake.f.specs" data-enter="inAdd" value="${esc(f.specs)}" placeholder="Storage / color · 128GB Midnight" aria-label="Storage, color, specs">
+      <input class="in mono" id="n-serial" data-bind="ui.intake.f.serial" data-enter="inAdd" value="${esc(f.serial)}" placeholder="Serial / IMEI (optional)" aria-label="Serial or IMEI"></div>
+    <div class="seg" role="radiogroup" aria-label="Condition">${Object.entries(CONDS).map(([c, col]) => `<button class="${f.condition === c ? 'on' : ''}" data-act="inCond" data-v="${c}"><i class="cd" style="background:${col}"></i>${c}</button>`).join('')}</div>
+    <textarea class="ta" id="n-defect" data-bind="ui.intake.f.defect" rows="2" placeholder="Defects in plain English — scratches, battery health, anything not working (or “None found”)" aria-label="Defect description" style="height:auto;padding:11px 13px">${esc(f.defect)}</textarea>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+      <div class="fld" style="flex:1 1 130px"><label for="n-cost">Pay per unit <em>*</em></label><div class="money"><span>$</span><input class="in" id="n-cost" inputmode="decimal" data-bind="ui.intake.f.cost" data-enter="inAdd" value="${esc(f.cost)}" placeholder="0.00"></div></div>
+      <div class="fld" style="flex:1 1 130px"><label for="n-resale">Resale per unit <em>*</em></label><div class="money"><span>$</span><input class="in" id="n-resale" inputmode="decimal" data-bind="ui.intake.f.resale" data-enter="inAdd" value="${esc(f.resale)}" placeholder="0.00"></div></div>
+      <div class="fld" style="flex:0 0 auto"><span class="lb">Qty</span><div class="acts" style="align-items:center;gap:6px;height:44px"><button class="btn ic sm" data-act="inQty" data-d="-1" aria-label="One fewer" ${qtyOf(f) <= 1 ? 'disabled' : ''}>−</button><span class="mono" style="min-width:26px;text-align:center;font-size:17px">${qtyOf(f)}</span><button class="btn ic sm" data-act="inQty" data-d="1" aria-label="One more" ${f.serial.trim() || qtyOf(f) >= 100 ? 'disabled' : ''}>＋</button></div></div></div>
+    ${N.ferr ? `<div class="notice bad">${esc(N.ferr)}</div>` : ''}
+    <div class="acts" style="justify-content:flex-end">${editing ? '<button class="btn" data-act="inEditCancel">Cancel edit</button>' : ''}<button class="btn pri lg" data-act="inAdd">${ic(editing ? 'check' : 'plus', 16, 2.2)}${editing ? 'Save to queue' : 'Add to queue'}</button></div></section>`;
+
+  // ── right: queue + checkout
+  const q = N.custQ.toLowerCase(); const found = N.custMode === 'existing' && q ? Object.values(S.customers).filter(c => [c.name, c.phone, c.email, c.code].some(v => String(v || '').toLowerCase().includes(q))).slice(0, 5) : [];
+  const digits = s => String(s || '').replace(/\D/g, ''); const dup = N.custMode === 'new' && digits(N.c.phone).length >= 7 ? Object.values(S.customers).find(c => digits(c.phone) === digits(N.c.phone)) : null;
+  const picked = N.customerId ? S.customers[N.customerId] : null;
+  const queue = N.items.length ? N.items.map((x, i) => `<div style="display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:999px;background:var(--card2);border:1px solid ${N.editing === i ? '#3DDC97' : 'var(--line)'}">${catTile(x.category, 30, 15)}<div style="flex-grow:1;min-width:0"><div style="font-weight:500;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.title)}</div><div class="sm mut2" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${qtyOf(x) > 1 ? `<b style="color:#5FE6AC;font-weight:600">×${qtyOf(x)}</b> · ` : ''}${esc(x.condition)}${x.specs ? ' · ' + esc(x.specs) : ''}</div></div><span class="mono" style="font-size:13px">${money0(num(x.cost) * qtyOf(x))}</span><button class="btn ic sm" style="width:28px;height:28px" data-act="inEdit" data-i="${i}" aria-label="Edit ${esc(x.title)}">${ic('edit', 13)}</button><button class="btn ic sm" style="width:28px;height:28px" data-act="cartDel" data-i="${i}" aria-label="Remove ${esc(x.title)}">${ic('x', 13)}</button></div>`).join('')
+    : '<div class="sm mut2" style="padding:18px 12px;border:1px dashed #2A3632;border-radius:16px;text-align:center">Devices you add land here.</div>';
+  const custBlock = picked ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:var(--card2);border:1px solid #2E6B50"><span class="av mono" style="width:32px;height:32px;font-size:11px;background:#1C2622">CU</span><div style="flex-grow:1;min-width:0"><div style="font-weight:500;font-size:14px">${esc(picked.name)}</div><div class="sm mut2">${esc(picked.phone || '')} · ${esc(picked.code)}</div></div><button class="btn sm" data-act="inCustClear">Change</button></div>`
+    : `<div class="seg"><button class="${N.custMode === 'new' ? 'on' : ''}" data-act="inCust" data-v="new">New</button><button class="${N.custMode === 'existing' ? 'on' : ''}" data-act="inCust" data-v="existing">Returning</button></div>
+      ${N.custMode === 'existing' ? `<label class="search" style="flex:none;max-width:none;min-width:0">${ic('search', 16)}<input id="n-cq" type="search" data-bind="ui.intake.custQ" data-live="1" value="${esc(N.custQ)}" placeholder="Name, phone or CU code"></label>
+        ${found.map(c => `<button class="pickrow" data-act="inPickCust" data-code="${esc(c.code)}"><span style="flex-grow:1;text-align:left"><span style="display:block;font-weight:500">${esc(c.name)}</span><span class="sm mut2">${esc(c.phone || '')} · ${esc(c.code)}</span></span></button>`).join('')}${q && !found.length ? '<div class="sm mut2">No match — switch to New.</div>' : ''}`
+      : `<div class="grid g2" style="gap:10px"><input class="in" id="n-cn" data-bind="ui.intake.c.name" value="${esc(N.c.name)}" placeholder="Full name *" aria-label="Customer name"><input class="in mono" id="n-cp" inputmode="tel" data-bind="ui.intake.c.phone" data-live="1" value="${esc(N.c.phone)}" placeholder="Phone *" aria-label="Customer phone"></div>
+        <input class="in" id="n-ce" type="email" data-bind="ui.intake.c.email" value="${esc(N.c.email)}" placeholder="Email (optional)" aria-label="Customer email">
+        <select class="sel" id="n-src" data-bind="ui.intake.c.source" aria-label="How did they find us?">${SOURCES.map(s => `<option ${N.c.source === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
+        ${dup ? `<div class="notice">${ic('warn', 16)}<div style="flex-grow:1">Already a customer: <b>${esc(dup.name)}</b> (${esc(dup.code)})</div><button class="btn sm" data-act="inPickCust" data-code="${esc(dup.code)}">Use</button></div>` : ''}`}`;
+  const checkout = `<aside class="card pad col-side" style="gap:14px;position:sticky;top:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h2>Checkout</h2><span class="sm mut2">${units} unit${units === 1 ? '' : 's'}</span></div>
+    <div style="display:flex;flex-direction:column;gap:8px;max-height:340px;overflow:auto">${queue}</div>
+    ${N.items.length ? `<div style="display:flex;justify-content:space-between;font-size:13px"><span class="mut">Expected resale</span><span class="mono">${money(resale)}</span></div><div style="display:flex;justify-content:space-between;font-size:13px;margin-top:-6px"><span class="mut">Gross spread</span><span class="mono" style="color:${resale - total >= 0 ? '#5FE6AC' : '#F2A08A'}">${money(resale - total)}</span></div>` : ''}
+    <div style="border-top:1px solid var(--line);padding-top:14px;display:flex;flex-direction:column;gap:10px"><b style="font-size:13px;color:#B7C3BD">Customer</b>${custBlock}</div>
+    <div style="border-top:1px solid var(--line);padding-top:14px;display:flex;flex-direction:column;gap:10px"><b style="font-size:13px;color:#B7C3BD">Payment</b>
+      <div class="seg">${PAY.map(m => `<button class="${N.method === m ? 'on' : ''}" data-act="inPay" data-v="${m}">${m}</button>`).join('')}</div>
+      <div class="grid g2" style="gap:10px"><input class="in" id="n-date" type="date" data-bind="ui.intake.date" value="${esc(N.date)}" aria-label="Purchase date"><input class="in mono" id="n-ref" data-bind="ui.intake.ref" value="${esc(N.ref)}" placeholder="Ref # (optional)" aria-label="Payment reference"></div>
+      <label style="display:flex;gap:10px;align-items:flex-start;font-size:12px;line-height:1.5" class="mut"><input type="checkbox" data-act="inConfirm" ${N.confirm ? 'checked' : ''} style="width:17px;height:17px;accent-color:#3DDC97;margin-top:1px;flex:none">Customer confirmed they own these devices and they aren’t reported lost or stolen.</label></div>
     ${N.err ? `<div class="notice bad">${esc(N.err)}</div>` : ''}
-    ${N.step === 1 ? `<button class="btn pri lg" data-act="inNext">Next: Customer info${ic('right', 16, 2)}</button>` : N.step === 2 ? `<button class="btn pri lg" data-act="inNext">Next: Payment${ic('right', 16, 2)}</button><button class="btn" data-act="inBack">Back</button>` : `<button class="btn pri lg" data-act="inDone" ${N.busy ? 'disabled' : ''}>${N.busy ? 'Saving purchase…' : 'Complete Purchase'}</button><button class="btn" data-act="inBack">Back</button>`}
-    <button class="btn" style="border:0;background:transparent;box-shadow:none" data-act="inCancel">Cancel</button></aside>`;
-  let body = '';
-  if (N.step === 1) {
-    body = `<div class="seg" style="align-self:flex-start"><button class="${!N.multi ? 'on' : ''}" data-act="inMulti" data-v="0">Single device</button><button class="${N.multi ? 'on' : ''}" data-act="inMulti" data-v="1">Add multiple items to one purchase</button></div>
-    <section class="card pad" style="display:flex;flex-direction:column;gap:20px"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h2>Device information</h2><span class="sm mut2" style="display:inline-flex;align-items:center;gap:6px"><span class="li req" style="width:16px;height:16px;border-radius:5px"></span>green icon = required</span></div>
-      <div class="grid g2 stack"><div class="fld">${reqLabel('n-cat', 'Category', 'grid')}<select class="sel" id="n-cat" data-bind="ui.intake.f.category">${Object.keys(CATS).map(c => `<option ${f.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
-      <div class="fld">${reqLabel('n-title', 'Brand &amp; model', 'gem', 1)}<input class="in" id="n-title" data-bind="ui.intake.f.title" value="${esc(f.title)}" placeholder="e.g. Apple iPhone 14 Pro"></div>
-      <div class="fld">${reqLabel('n-specs', 'Storage / color / specs', 'chip')}<input class="in" id="n-specs" data-bind="ui.intake.f.specs" value="${esc(f.specs)}" placeholder="128GB · Midnight"></div>
-      <div class="fld">${reqLabel('n-serial', 'Serial / IMEI', 'barcode', 0, ' <span class="opt">optional</span>')}<input class="in mono" id="n-serial" data-bind="ui.intake.f.serial" value="${esc(f.serial)}" placeholder="Scan or type"></div></div>
-      <div class="fld"><div class="lb"><span class="li">${ic('star', 14, 1.9)}</span>Condition</div><div class="seg" role="radiogroup" aria-label="Condition">${Object.entries(CONDS).map(([c, col]) => `<button class="${f.condition === c ? 'on' : ''}" data-act="inCond" data-v="${c}"><i class="cd" style="background:${col}"></i>${c}</button>`).join('')}</div></div>
-      <div class="fld">${reqLabel('n-defect', 'Plain-English defect description', 'warn', 1)}<textarea class="ta" id="n-defect" data-bind="ui.intake.f.defect" rows="3" placeholder="Scratches, battery health, anything not working…">${esc(f.defect)}</textarea></div>
-      <div class="grid g3 stack">${N.multi ? `<div class="fld">${reqLabel('n-qty', 'Quantity', 'layers')}<input class="in mono" id="n-qty" inputmode="numeric" data-bind="ui.intake.f.qty" value="${esc(f.qty)}"></div>` : ''}
-      <div class="fld">${reqLabel('n-cost', 'Purchase price per item', 'wallet', 1)}<div class="money"><span>$</span><input class="in" id="n-cost" inputmode="decimal" data-bind="ui.intake.f.cost" value="${esc(f.cost)}" placeholder="0.00"></div></div>
-      <div class="fld">${reqLabel('n-resale', 'Expected resale per item', 'trend', 1)}<div class="money"><span>$</span><input class="in" id="n-resale" inputmode="decimal" data-bind="ui.intake.f.resale" value="${esc(f.resale)}" placeholder="0.00"></div></div></div>
-      ${N.multi ? `<div style="display:flex;justify-content:flex-end;border-top:1px solid var(--line);padding-top:18px"><button class="btn" data-act="inAdd">${ic('plus', 16, 2.2)}Add item to purchase</button></div>` : ''}</section>`;
-  } else if (N.step === 2) {
-    const q = N.custQ.toLowerCase(); const list = Object.values(S.customers).filter(c => !q || [c.name, c.phone, c.email, c.code].some(v => String(v || '').toLowerCase().includes(q))).slice(0, 8);
-    const digits = s => String(s || '').replace(/\D/g, ''); const dup = N.custMode === 'new' && digits(N.c.phone).length >= 7 ? Object.values(S.customers).find(c => digits(c.phone) === digits(N.c.phone)) : null;
-    body = `<div class="seg" style="align-self:flex-start"><button class="${N.custMode === 'existing' ? 'on' : ''}" data-act="inCust" data-v="existing">Returning customer</button><button class="${N.custMode === 'new' ? 'on' : ''}" data-act="inCust" data-v="new">New customer</button></div>` +
-      (N.custMode === 'existing' ? `<section class="card pad" style="display:flex;flex-direction:column;gap:14px"><h2>Find a customer</h2><label class="search" style="flex:none;max-width:none">${ic('search', 16)}<input id="n-cq" type="search" data-bind="ui.intake.custQ" value="${esc(N.custQ)}" placeholder="Name, phone, email or CU code"></label>
-        ${list.length ? list.map(c => `<button class="pickrow ${N.customerId === c.code ? 'on' : ''}" data-act="inPickCust" data-code="${esc(c.code)}"><span class="av mono" style="width:36px;height:36px;font-size:12px;background:#1C2622">CU</span><span style="flex-grow:1"><span style="display:block;font-weight:500">${esc(c.name)}</span><span class="sm mut2">${esc(c.phone || '')} · ${esc(c.code)}</span></span>${N.customerId === c.code ? `<span class="em">${ic('check', 18, 2.4)}</span>` : ''}</button>`).join('') : '<div class="sm mut2">No matching customers. Switch to “New customer”.</div>'}</section>`
-        : `<section class="card pad" style="display:flex;flex-direction:column;gap:18px"><div style="display:flex;justify-content:space-between"><h2>Customer details</h2><span class="sm mut2">green icon = required</span></div>
-        <div class="grid g2 stack"><div class="fld">${reqLabel('n-cn', 'Full name', 'users', 1)}<input class="in" id="n-cn" data-bind="ui.intake.c.name" value="${esc(N.c.name)}"></div><div class="fld">${reqLabel('n-cp', 'Phone number', 'cash', 1)}<input class="in mono" id="n-cp" inputmode="tel" data-bind="ui.intake.c.phone" value="${esc(N.c.phone)}"></div>
-        <div class="fld span2">${reqLabel('n-ce', 'Email address', 'link', 0, ' <span class="opt">optional</span>')}<input class="in" id="n-ce" type="email" data-bind="ui.intake.c.email" value="${esc(N.c.email)}"></div></div>
-        <div class="fld"><div class="lb"><span class="li">${ic('trend', 14, 1.9)}</span>How did they find us?</div><div class="seg">${SOURCES.map(s => `<button class="${N.c.source === s ? 'on' : ''}" data-act="inSrc" data-v="${s}">${s}</button>`).join('')}</div></div></section>
-        ${dup ? `<div class="notice">${ic('warn', 18)}<div style="flex-grow:1"><b>This phone number is already in the Customer Vault</b> — ${esc(dup.name)} (${esc(dup.code)}). Use the existing contact to keep their history together.</div><button class="btn sm" data-act="inPickCust" data-code="${esc(dup.code)}">Use contact</button></div>` : ''}`);
-  } else {
-    const cust = N.customerId ? S.customers[N.customerId] : N.c;
-    body = `<section class="card pad" style="display:flex;flex-direction:column;gap:18px"><h2>How was the customer paid?</h2>
-      <div class="grid g4">${PAY.map(m => `<button class="pickrow ${N.method === m ? 'on' : ''}" style="flex-direction:column;align-items:flex-start" data-act="inPay" data-v="${m}">${ic(m === 'Cash' ? 'cash' : m === 'Other' ? 'plus' : 'sync', 20)}<span style="font-weight:600">${m}</span></button>`).join('')}</div>
-      <div class="grid g2 stack"><div class="fld"><label for="n-date">Purchase date</label><input class="in" id="n-date" type="date" data-bind="ui.intake.date" value="${esc(N.date)}"></div><div class="fld"><label for="n-ref">Payment reference <span class="opt">optional</span></label><input class="in mono" id="n-ref" data-bind="ui.intake.ref" value="${esc(N.ref)}" placeholder="Confirmation #"></div></div>
-      <label style="display:flex;gap:12px;align-items:flex-start;font-size:13px;line-height:1.5" class="mut"><input type="checkbox" data-act="inConfirm" ${N.confirm ? 'checked' : ''} style="width:18px;height:18px;accent-color:#3DDC97;margin-top:1px">Customer confirmed they own these devices and they are not reported lost or stolen.</label></section>
-      <section class="card pad"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><h2>Review</h2><button class="btn sm" data-act="inGo" data-v="1">Edit items</button></div>
-      ${N.items.map(x => `<div class="row"><span><b style="font-weight:500">${esc(x.title)}</b><span class="mut2"> · ${esc(x.condition)}${Math.round(num(x.qty)) > 1 ? ' · ×' + Math.round(num(x.qty)) : ''}</span></span><span class="mono">${money(num(x.cost) * Math.round(num(x.qty)))}</span></div>`).join('')}
-      <div class="row"><span class="mut">Customer</span><span>${esc((cust && cust.name) || '—')} · ${esc((cust && cust.phone) || '')}</span></div><div class="row"><span class="mut">Purchased by</span><span>${esc(ownerName(N.by))}</span></div></section>`;
-  }
-  return `<header class="head"><div><div class="sm mut2" style="font-size:13px">Record the customer, item and purchase together.</div><h1>New Purchase</h1></div><div class="acts"><ol class="steps" aria-label="Purchase progress">${steps}</ol>
+    <button class="btn pri lg" data-act="inDone" ${N.busy || (!N.items.length && !f.title.trim()) ? 'disabled' : ''} style="justify-content:space-between"><span>${N.busy ? 'Saving purchase…' : 'Complete purchase'}</span><span class="mono">${money(total)}</span></button>
+    ${N.items.length || N.c.name || N.customerId ? '<button class="btn" style="border:0;background:transparent;box-shadow:none" data-act="inCancel">Clear everything</button>' : ''}</aside>`;
+
+  return `<header class="head"><div><div class="sm mut2" style="font-size:13px">Add each device, then check out once.</div><h1>New Purchase</h1></div><div class="acts">
     <div class="seg" style="padding:3px" aria-label="Purchased by">${['o1', 'o2'].map(o => `<button class="${N.by === o ? 'on' : ''}" style="height:32px" data-act="inBy" data-v="${o}">${esc(ownerName(o))}</button>`).join('')}</div></div></header>
-    <div class="cols"><div class="col-main">${body}</div>${cart}</div>`;
+    <div class="cols"><div class="col-main">${card}</div>${checkout}</div>`;
 }
 
 // ── RECORD A SALE ─────────────────────────────────────────────────
@@ -1210,8 +1220,11 @@ function csvAct() { const rows = []; Object.values(S.activity).forEach(ch => (ch
 // ── intake completion ─────────────────────────────────────────────
 async function completeIntake() {
   const N = S.ui.intake; if (N.busy) return;
-  if (!N.items.length) { N.err = 'Add at least one item to the purchase.'; return render(); }
-  if (!N.customerId && (!N.c.name.trim() || !N.c.phone.trim())) { N.err = 'Enter the customer name and phone number.'; N.step = 2; return render(); }
+  if (N.f.title.trim() || num(N.f.cost)) { const e = validItem(N.f); if (e) { N.err = 'Finish or clear the device card first: ' + e; return render(); } ACT.inAdd(); }
+  if (!N.items.length) { N.err = 'Add at least one device to the queue.'; return render(); }
+  if (N.custMode === 'existing' && !N.customerId) { N.err = 'Pick the returning customer, or switch to New.'; return render(); }
+  if (!N.customerId && (!N.c.name.trim() || !N.c.phone.trim())) { N.err = 'Enter the customer name and phone number.'; return render(); }
+  if (!N.customerId && N.c.email && !/^\S+@\S+\.\S+$/.test(N.c.email)) { N.err = 'Enter a valid email or leave it blank.'; return render(); }
   if (!N.confirm) { N.err = 'Confirm the customer owns these devices.'; return render(); }
   N.busy = true; N.err = ''; render();
   try {
@@ -1232,7 +1245,7 @@ async function completeIntake() {
     await write(() => ref('txs/' + tx).set({ code: tx, date: N.date, desc: `Purchase ${pu} · ${codes.length} item${codes.length > 1 ? 's' : ''}`, amount: -total, category: 'Inventory acquisition', method: N.method, by: N.by, payee: custN, ref: N.ref.trim(), link: pu, tags: '', notes: '', createdAt: nowISO() }), tx);
     if (newCust) logAct('CU', 'added customer', cu, custN, `${N.c.source}`);
     logAct('PU', 'completed purchase', pu, `${codes.length} item${codes.length > 1 ? 's' : ''}`, `${money(total)} paid via ${N.method}`, [...codes, cu, tx]);
-    S.ui.intake = null; toast(`Purchase ${pu} saved — ${codes.length} item${codes.length > 1 ? 's' : ''} added.`); go(codes.length === 1 ? '#/item/' + encodeURIComponent(codes[0]) : '#/inventory');
+    S.ui.intake = null; clearIntakeDraft(); toast(`Purchase ${pu} saved — ${codes.length} item${codes.length > 1 ? 's' : ''} added.`); go(codes.length === 1 ? '#/item/' + encodeURIComponent(codes[0]) : '#/inventory');
   } catch (e) { N.busy = false; N.err = (e && e.message) || 'Could not complete the purchase. Nothing was lost — try again.'; render(); }
 }
 
@@ -1362,27 +1375,31 @@ const ACT = {
     } catch (e) {}
   },
   // intake
-  inMulti: el => { S.ui.intake.multi = el.dataset.v === '1'; if (!S.ui.intake.multi) S.ui.intake.f.qty = 1; render(); },
-  inCond: el => { S.ui.intake.f.condition = el.dataset.v; render(); },
-  inBy: el => { S.ui.intake.by = el.dataset.v; render(); },
-  inAdd: () => { const N = S.ui.intake; const e = validItem(N.f); if (e) { N.err = e; return render(); } if (N.f.serial.trim() && N.items.some(x => x.serial.trim() === N.f.serial.trim())) { N.err = 'This serial / IMEI is already in the purchase.'; return render(); } N.items.push({ ...N.f }); N.f = blankForm(N.f.category); N.err = ''; render(); },
-  cartDel: el => { S.ui.intake.items.splice(+el.dataset.i, 1); render(); },
-  inNext: () => {
-    const N = S.ui.intake; N.err = '';
-    if (N.step === 1) { const filled = N.f.title.trim() || num(N.f.cost); if (filled) { const e = validItem(N.f); if (e) { N.err = e; return render(); } if (!N.multi) N.items = []; N.items.push({ ...N.f }); N.f = blankForm(N.f.category); } if (!N.items.length) { N.err = 'Add at least one item to the purchase.'; return render(); } N.step = 2; }
-    else if (N.step === 2) { if (N.custMode === 'existing' && !N.customerId) { N.err = 'Choose the returning customer, or switch to New customer.'; return render(); } if (N.custMode === 'new') { N.customerId = null; if (!N.c.name.trim() || !N.c.phone.trim()) { N.err = 'Enter the customer name and phone number.'; return render(); } if (N.c.email && !/^\S+@\S+\.\S+$/.test(N.c.email)) { N.err = 'Enter a valid email or leave it blank.'; return render(); } } N.step = 3; }
-    render(); window.scrollTo(0, 0);
+  inCond: el => { S.ui.intake.f.condition = el.dataset.v; S.ui.intake.flash = ''; render(); },
+  inCat: el => { S.ui.intake.f.category = el.dataset.v; S.ui.intake.flash = ''; render(); },
+  inQty: el => { const f = S.ui.intake.f; f.qty = Math.max(1, Math.min(100, qtyOf(f) + +el.dataset.d)); render(); },
+  inAdd: () => {
+    const N = S.ui.intake; const e = validItem(N.f); if (e) { N.ferr = e; N.flash = ''; return render(); }
+    const x = { ...N.f, title: N.f.title.trim(), specs: N.f.specs.trim(), serial: N.f.serial.trim(), defect: N.f.defect.trim(), qty: qtyOf(N.f) };
+    const others = N.items.filter((_, i) => i !== N.editing);
+    if (x.serial && (others.some(y => (y.serial || '').trim() === x.serial) || itemsArr().some(i => (i.serial || '').trim() === x.serial && !['sold', 'arch'].includes(i.status)))) { N.ferr = 'This serial / IMEI is already in the queue or in stock.'; return render(); }
+    if (N.editing >= 0) { N.items[N.editing] = x; N.flash = 'Updated in the queue'; } else { N.items.push(x); N.flash = `Added ${x.title}${x.qty > 1 ? ' ×' + x.qty : ''}`; }
+    N.editing = -1; N.ferr = ''; N.err = ''; N.f = blankForm(x.category); render();
+    const t = document.getElementById('n-title'); if (t) t.focus();
   },
-  inBack: () => { const N = S.ui.intake; N.step = Math.max(1, N.step - 1); N.err = ''; render(); },
-  inGo: el => { S.ui.intake.step = +el.dataset.v; render(); },
-  inCancel: async () => { if (await confirmBox({ title: 'Discard this purchase?', body: 'The items and customer details you entered will be cleared.', ok: 'Discard', danger: 1 })) { S.ui.intake = null; go('#/dashboard'); } },
-  inCust: el => { const N = S.ui.intake; N.custMode = el.dataset.v; if (el.dataset.v === 'new') N.customerId = null; N.err = ''; render(); },
+  inEdit: el => { const N = S.ui.intake; const i = +el.dataset.i; N.editing = i; N.f = { ...blankForm(), ...N.items[i], qty: qtyOf(N.items[i]) }; N.ferr = ''; N.flash = ''; render(); const t = document.getElementById('n-title'); if (t) t.focus(); },
+  inEditCancel: () => { const N = S.ui.intake; N.editing = -1; N.f = blankForm(N.f.category); N.ferr = ''; render(); },
+  cartDel: el => { const N = S.ui.intake; const i = +el.dataset.i; N.items.splice(i, 1); if (N.editing === i) { N.editing = -1; N.f = blankForm(N.f.category); } else if (N.editing > i) N.editing--; render(); },
+  inCust: el => { const N = S.ui.intake; N.custMode = el.dataset.v; N.customerId = null; N.err = ''; render(); },
   inPickCust: el => { const N = S.ui.intake; N.customerId = el.dataset.code; N.custMode = 'existing'; N.custQ = ''; N.err = ''; render(); },
+  inCustClear: () => { const N = S.ui.intake; N.customerId = null; N.custMode = 'existing'; N.custQ = ''; render(); },
+  inBy: el => { S.ui.intake.by = el.dataset.v; render(); },
+  inCancel: async () => { if (await confirmBox({ title: 'Discard this purchase?', body: 'The items and customer details you entered will be cleared.', ok: 'Discard', danger: 1 })) { S.ui.intake = null; clearIntakeDraft(); go('#/dashboard'); } },
   inSrc: el => { S.ui.intake.c.source = el.dataset.v; render(); },
   inPay: el => { S.ui.intake.method = el.dataset.v; render(); },
   inConfirm: el => { S.ui.intake.confirm = el.checked; render(); },
   inDone: () => completeIntake(),
-  custIntake: el => { S.ui.intake = newIntake(); S.ui.intake.customerId = el.dataset.code; S.ui.intake.custMode = 'existing'; go('#/intake'); },
+  custIntake: el => { if (!S.ui.intake) S.ui.intake = restoreIntake(); S.ui.intake.customerId = el.dataset.code; S.ui.intake.custMode = 'existing'; go('#/intake'); },
   // sale
   sChan: el => { const s = S.ui.sale; s.channel = el.dataset.v; s.feesTouched = el.dataset.v === 'Other' ? s.feesTouched : false; s.ship = el.dataset.v === 'Local' ? '0' : (num(s.ship) ? s.ship : String(S.settings.shipFlat || 0)); autoFees(s); render(); },
   sSave: () => completeSale(),
@@ -1466,6 +1483,7 @@ document.addEventListener('input', ev => {
     else setPath(path, el.value);
     if (p === 'ui.sale.price') autoFees(S.ui.sale); if (p === 'ui.sale.fees') S.ui.sale.feesTouched = true; if (p === 'modal.val') S.modal.val = el.value;
     if (p.startsWith('ui.master')) S.ui.master.page = 0;
+    if (p.startsWith('ui.intake.f.') && S.ui.intake) { S.ui.intake.flash = ''; S.ui.intake.ferr = ''; }
     if (el.tagName !== 'SELECT' && !p.startsWith('lock.') && !p.startsWith('modal')) renderSoon();
   }
   if (el.dataset.ifield) { (S.ui.edit[el.dataset.code] = S.ui.edit[el.dataset.code] || {})[el.dataset.ifield] = el.value; }
@@ -1484,6 +1502,7 @@ document.addEventListener('keydown', ev => {
   if (!S.owner && S.pins && S.pins.o1 && !(ev.target && ev.target.tagName === 'INPUT')) { if (/^\d$/.test(ev.key)) ACT.key({ dataset: { k: ev.key } }); else if (ev.key === 'Backspace') ACT.key({ dataset: { k: '⌫' } }); else if (ev.key === 'Enter') ACT.unlock(); }
   if (ev.key === 'Escape' && S.modal) ACT.mClose({ dataset: {} }, ev);
   if (ev.key === 'Enter' && ev.target.dataset && ev.target.dataset.ifield && ev.target.tagName === 'INPUT') ev.target.blur();
+  if (ev.key === 'Enter' && ev.target.dataset && ev.target.dataset.enter && ev.target.tagName === 'INPUT' && ACT[ev.target.dataset.enter]) { ev.preventDefault(); ACT[ev.target.dataset.enter](ev.target); return; }
   if (ev.key === 'Enter' && S.needLogin && ev.target.dataset && String(ev.target.dataset.bind || '').startsWith('login.')) ACT.fbSignIn();
 });
 document.addEventListener('dragover', ev => { const z = ev.target.closest && ev.target.closest('[data-drop]'); if (z) { ev.preventDefault(); z.classList.add('over'); } });
