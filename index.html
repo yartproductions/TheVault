@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Obsidian Vault</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<script src="config.js?v=shopify-activate-20261029"></script>
+<script src="config.js?v=syslog-20261029"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -390,7 +390,7 @@ async function firebaseBackend(cfg, opts = {}) {
     signIn: (email, pw) => au.signInWithEmailAndPassword(auth, email, pw),
     resetPw: email => au.sendPasswordResetEmail(auth, email),
     signOut: () => au.signOut(auth),
-    call: async (name, data) => (await fu.httpsCallable(functions, name)(data)).data
+    call: async (name, data) => { try { return (await fu.httpsCallable(functions, name)(data)).data; } catch (e) { sysLog('error', 'backend', name, (e && e.message) || 'Backend call failed', errDetail(e)); throw e; } }
   };
 }
 
@@ -409,7 +409,7 @@ async function write(fn, label) {
       throw e;
     }
   } catch (e) {
-    S.syncErr = e; const msg = e && e.code === 'quota_exceeded' ? 'The vault database is full. Export a backup and archive old records.' : e && e.code === 'revoked' ? (e.message || 'Access to this vault changed. Reload the page.') : `Couldn't save${label ? ' ' + label : ''}. Check your connection and try again.`;
+    S.syncErr = e; sysLog('error', 'sync', label ? 'save ' + label : 'save', (e && e.message) || (e && e.code) || 'Save failed', errDetail(e)); const msg = e && e.code === 'quota_exceeded' ? 'The vault database is full. Export a backup and archive old records.' : e && e.code === 'revoked' ? (e.message || 'Access to this vault changed. Reload the page.') : `Couldn't save${label ? ' ' + label : ''}. Check your connection and try again.`;
     toast(msg, 'err'); throw e;
   } finally { S.pending--; paintSync(); }
 }
@@ -456,12 +456,14 @@ async function boot() {
     await new Promise(res => S.fb.onAuth(u => { if (u) { S.uid = u.uid; S.fbEmail = u.email; S.needLogin = false; res(); } else { S.needLogin = true; S.uid = null; render(); } }));
     await S.fb.call('ensureVaultMembership', {}).catch(() => {});
   }
+  sysReady();
+  if (S.backendErr) sysLog('error', 'app', 'startup', S.backendErr, '');
   const COLS = ['items', 'customers', 'purchases', 'sales', 'txs', 'activity'];
   for (const col of COLS) {
     S.db.collection(col).limit(1000).onSnapshot(snap => {
       const m = {}; snap.docs.forEach(d => { if (d.exists) m[d.id] = d.data(); });
       S[col] = m; S.loaded[col] = true; renderSoon();
-    }, err => { S.syncErr = err; if (err && err.code === 'revoked') toast(err.message || 'Access denied.', 'err'); S.loaded[col] = true; renderSoon(); });
+    }, err => { S.syncErr = err; sysLog('error', 'sync', 'listen ' + col, (err && err.message) || 'Live sync stopped', errDetail(err)); if (err && err.code === 'revoked') toast(err.message || 'Access denied.', 'err'); S.loaded[col] = true; renderSoon(); });
   }
   ref('meta/settings').onSnapshot(s => {
     const d = s.exists ? s.data() : {};
@@ -546,7 +548,61 @@ function paintSync() {
   else { txt = 'Synced · live on every device'; }
   el.innerHTML = `<span class="dot ${dot}"></span>${esc(txt)}`;
 }
-function toast(msg, kind = '') { const id = uidShort(); S.toasts.push({ id, msg, kind }); paintToasts(); setTimeout(() => { S.toasts = S.toasts.filter(t => t.id !== id); paintToasts(); }, kind === 'err' ? 7000 : 3500); }
+// ── system log (developer maintenance) ────────────────────────────
+// Errors from this app and from the Firebase backend land in the shared `syslog` collection.
+// Document ids count down from the future, so the default order is newest first.
+const SYSLOG_MAX = 300;
+const SYS = { buf: [], seen: {}, minute: 0, count: 0, sub: null, rows: [], ready: false, filter: 'all', open: {}, err: '' };
+const sysId = () => String(9e15 - Date.now()).padStart(16, '0') + '-' + uidShort();
+function errDetail(e) {
+  if (!e) return '';
+  if (typeof e !== 'object') return String(e);
+  const parts = [];
+  if (e.code) parts.push('code: ' + e.code);
+  if (e.details) { try { parts.push('details: ' + (typeof e.details === 'string' ? e.details : JSON.stringify(e.details))); } catch (x) {} }
+  if (e.stack) parts.push(String(e.stack)); else if (e.message) parts.push(String(e.message));
+  return parts.join('\n');
+}
+function sysLog(level, source, where, msg, detail) {
+  try {
+    const m = String(msg || 'Unknown error').slice(0, 500); const now = Date.now();
+    const key = source + '|' + where + '|' + m;
+    if (level !== 'info' && SYS.seen[key] && now - SYS.seen[key] < 15000) return; SYS.seen[key] = now;
+    const min = Math.floor(now / 60000); if (min !== SYS.minute) { SYS.minute = min; SYS.count = 0; } if (++SYS.count > 20) return;
+    const e = { t: new Date(now).toISOString(), level, source, where: String(where || '').slice(0, 120), msg: m, detail: String(detail || '').slice(0, 3000), who: S.owner ? ownerName(S.owner) : '', email: S.fbEmail || '', page: location.hash || '#/', device: navigator.userAgent.slice(0, 160), app: 'web' };
+    if (!SYS.ready) { SYS.buf.push([sysId(), e]); if (SYS.buf.length > 50) SYS.buf.shift(); return; }
+    ref('syslog/' + sysId()).set(e).catch(() => {}); // the logger never logs its own failures
+  } catch (x) {}
+}
+function sysReady() { SYS.ready = true; const b = SYS.buf.splice(0); b.forEach(([id, e]) => ref('syslog/' + id).set(e).catch(() => {})); }
+window.addEventListener('error', ev => { if (!ev.message || /ResizeObserver loop/.test(ev.message)) return; sysLog('error', 'app', `${(ev.filename || '').split('/').pop()}:${ev.lineno || 0}`, ev.message, ev.error && ev.error.stack); });
+window.addEventListener('unhandledrejection', ev => { const r = ev.reason || {}; sysLog('error', 'app', 'unhandled promise', r.message || String(r), errDetail(r)); });
+function sysText(rows) { return rows.map(r => `${r.t}  ${String(r.level || '').toUpperCase().padEnd(5)}  ${(r.source || '').padEnd(8)}  ${r.where || '-'}  ${r.msg}${r.who || r.email ? `  [${[r.who, r.email].filter(Boolean).join(' · ')}]` : ''}${r.page ? '  ' + r.page : ''}${r.detail ? '\n    ' + String(r.detail).replace(/\n/g, '\n    ') : ''}`).join('\n'); }
+function sysRows() { const f = SYS.filter; return SYS.rows.filter(r => f === 'all' || (f === 'error' ? r.level === 'error' : r.source === f)); }
+function sysWatch() {
+  if (SYS.sub || !S.db || !SYS.ready) return;
+  SYS.sub = S.db.collection('syslog').limit(SYSLOG_MAX).onSnapshot(snap => {
+    SYS.rows = snap.docs.filter(d => d.exists).map(d => ({ id: d.id, ...d.data() })).sort((a, b) => String(b.t).localeCompare(String(a.t))); SYS.err = ''; renderSoon();
+  }, err => { SYS.err = (err && err.message) || 'Could not load the log.'; SYS.sub = null; renderSoon(); });
+}
+function sysSection() {
+  sysWatch();
+  const rows = sysRows(); const errs = SYS.rows.filter(r => r.level === 'error').length;
+  const col = { error: '#F2A08A', warn: '#F2C063', info: '#8EC3FF' };
+  const lines = rows.map(r => { const open = SYS.open[r.id]; const t = new Date(r.t); const ts = isNaN(t) ? esc(r.t) : t.toLocaleString('en-US', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    return `<div data-act="sysRow" data-id="${esc(r.id)}" style="padding:4px 6px;border-radius:6px;cursor:pointer;${open ? 'background:#0B1411' : ''}"><div style="white-space:pre-wrap;word-break:break-word"><span style="color:#5E6E67">${open ? '▾' : '▸'} ${ts}</span>  <span style="color:${col[r.level] || '#C9D4CF'};font-weight:600">${esc(String(r.level || '').toUpperCase().padEnd(5))}</span>  <span style="color:#7FD8E0">${esc(r.source || '')}</span>  <span style="color:#C9D4CF">${esc(r.where || '')}</span>  <span style="color:#E6EFEA">${esc(r.msg || '')}</span></div>
+      ${open ? `<div style="margin:6px 0 4px 18px;color:#8C9C95;white-space:pre-wrap;word-break:break-word">${esc([r.who || r.email ? 'user:   ' + [r.who, r.email].filter(Boolean).join(' · ') : '', r.page ? 'page:   ' + r.page : '', r.device ? 'device: ' + r.device : '', r.detail ? '\n' + r.detail : ''].filter(Boolean).join('\n'))}</div>` : ''}</div>`; }).join('');
+  return `<section class="card pad" style="display:flex;flex-direction:column;gap:14px;grid-column:1/-1">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><h2>System log</h2><div class="sm mut2" style="margin-top:4px">Errors from every device and from the Firebase backend, newest first. Click a line for details. Shows the latest ${SYSLOG_MAX}.</div></div>
+      <div class="acts"><button class="btn sm" data-act="sysCopy">Copy</button><button class="btn sm" data-act="sysDownload">${ic('down', 14)}Download</button><button class="btn sm" data-act="sysTest">Test entry</button><button class="btn sm danger" data-act="sysClear" ${SYS.rows.length ? '' : 'disabled'}>Clear log</button></div></div>
+    <div class="seg" style="align-self:flex-start">${[['all', `All · ${SYS.rows.length}`], ['error', `Errors · ${errs}`], ['backend', 'Backend'], ['app', 'App'], ['sync', 'Sync'], ['ui', 'Shown to user']].map(([k, l]) => `<button class="${SYS.filter === k ? 'on' : ''}" data-act="sysFilter" data-v="${k}">${l}</button>`).join('')}</div>
+    <div class="mono" role="log" aria-label="System log" style="background:#040706;border:1px solid #1B2622;border-radius:12px;padding:12px;font-size:12px;line-height:1.55;max-height:460px;overflow:auto;color:#C9D4CF">
+      <div style="color:#3DDC97;margin-bottom:6px">vault@obsidian:~$ tail -f syslog${SYS.filter !== 'all' ? ' | grep ' + esc(SYS.filter) : ''}</div>
+      ${SYS.err ? `<div style="color:#F2A08A">${esc(SYS.err)}</div>` : !SYS.ready ? '<div style="color:#5E6E67">Connecting…</div>' : lines || '<div style="color:#5E6E67">No entries. All quiet.</div>'}
+      <div style="color:#3DDC97">▌</div></div></section>`;
+}
+function toast(msg, kind = '') {
+  if (kind === 'err') sysLog('warn', 'ui', (location.hash || '#/').split('/')[1] || 'app', msg, ''); const id = uidShort(); S.toasts.push({ id, msg, kind }); paintToasts(); setTimeout(() => { S.toasts = S.toasts.filter(t => t.id !== id); paintToasts(); }, kind === 'err' ? 7000 : 3500); }
 function paintToasts() { $('#toasts').innerHTML = S.toasts.map(t => `<div class="toast ${t.kind}">${t.kind === 'err' ? `<span class="cor">${ic('warn', 16)}</span>` : `<span class="em">${ic('check', 16, 2.2)}</span>`}<span>${esc(t.msg)}</span></div>`).join(''); }
 
 // ── lock screen ───────────────────────────────────────────────────
@@ -972,7 +1028,8 @@ function pSettings() {
         <div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:10px"><b style="font-size:14px">Full backup</b><span class="sm mut2">All records as one JSON file (photos stay in the vault).</span><button class="btn" data-act="backup">${ic('down', 16)}Download backup</button></div>
         <div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:10px"><b style="font-size:14px">Restore / import</b><span class="sm mut2">A vault backup, or a backup from the old Obsidian Vault site.</span><label class="btn">${ic('up', 16)}Choose file<input type="file" accept="application/json,.json" data-restore="1" style="display:none"></label></div>
         <div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:10px"><b style="font-size:14px">Spreadsheet exports</b><span class="sm mut2">Open in Google Sheets or Excel.</span><div class="acts"><button class="btn sm" data-act="csvItems">Items</button><button class="btn sm" data-act="csvTx">Transactions</button><button class="btn sm" data-act="csvCust">Customers</button></div></div></div>
-      <div class="sm mut2" id="usage">${S.assets && S.assets.list ? '<button class="btn sm" data-act="usage">Check photo storage</button>' : ''}</div></section></div>`;
+      <div class="sm mut2" id="usage">${S.assets && S.assets.list ? '<button class="btn sm" data-act="usage">Check photo storage</button>' : ''}</div></section>
+    ${sysSection()}</div>`;
 }
 
 // ── MODALS ────────────────────────────────────────────────────────
@@ -1068,6 +1125,7 @@ async function uploadPhotos(code, files) {
       await write(() => ref('items/' + code).update({ packet: { photos: [...latest.filter(x => x !== r.id), r.id] }, updatedAt: nowISO() }), 'photo');
       added++;
     } catch (e) {
+      sysLog('error', 'app', 'photo upload ' + code, (e && e.message) || (e && e.code) || 'Upload failed', errDetail(e));
       const m = { too_large: 'is too large', unsupported_type: 'is not a supported image', quota_or_state: 'could not be stored — photo storage is full', rate_limited: 'was rate-limited — try again shortly' }[e && e.code];
       toast(`${f.name} ${m || 'could not be uploaded. Try again.'}`, 'err');
     } finally { S.uploads[code] = Math.max(0, (S.uploads[code] || 1) - 1); render(); }
@@ -1266,6 +1324,17 @@ const ACT = {
       if (productTab && res.adminUrl) productTab.location = res.adminUrl; else if (productTab) productTab.close();
       logAct('LT', (it.packet || {}).shopifyId ? 'updated the Shopify draft for' : 'created a Shopify draft for', lt, it.title, S.settings.shopify.store || '', [it.code]); toast('Shopify draft saved.');
     } catch (e) { if (productTab) productTab.close(); toast((e && e.message) || 'Shopify could not save the draft. Your packet is still safe in the Vault.', 'err'); }
+  },
+  sysRow: el => { const id = el.dataset.id; SYS.open[id] = !SYS.open[id]; render(); },
+  sysFilter: el => { SYS.filter = el.dataset.v; render(); },
+  sysCopy: async () => { const t = sysText(sysRows()); if (!t) return toast('The log is empty.'); try { await navigator.clipboard.writeText(t); toast('Log copied.'); } catch (e) { await saveFile(`vault-system-log-${localISO()}.txt`, t); } },
+  sysDownload: async () => { const t = sysText(sysRows()); if (!t) return toast('The log is empty.'); await saveFile(`vault-system-log-${localISO()}.txt`, t); },
+  sysTest: () => { sysLog('info', 'app', 'settings', 'Test entry: the system log is working.', 'Written from Settings → System log.'); toast('Test entry written.'); },
+  sysClear: async () => {
+    const rows = [...SYS.rows]; if (!rows.length) return;
+    if (!await confirmBox({ title: `Clear ${rows.length} log entr${rows.length > 1 ? 'ies' : 'y'}?`, body: 'This deletes the entries for every device. Download the log first if you may need it.', ok: 'Clear log', danger: 1 })) return;
+    let n = 0; for (const r of rows) { try { await ref('syslog/' + r.id).delete(); n++; } catch (e) {} }
+    SYS.open = {}; logAct('SYS', 'cleared the system log', 'LOG', '', `${n} entries`); toast(`Cleared ${n} entr${n === 1 ? 'y' : 'ies'}.`);
   },
   pkActivate: async el => {
     const it = S.items[el.dataset.code]; if (!ShopifyAdapter.configured()) return go('#/settings'); const pk = it.packet || {};

@@ -69,6 +69,16 @@ With Firebase Functions deployed, Settings can switch Shopify to **Create Shopif
 
 **Update Shopify draft / listing** re-syncs title, price, photos and quantity at any time. Configure the `SHOPIFY_SHOP`, `SHOPIFY_CLIENT_ID`, and `SHOPIFY_CLIENT_SECRET` Firebase secrets; never put them in `config.js` or Firestore. The Shopify app needs `write_products` and `write_inventory` access.
 
+## System log (developer maintenance)
+
+**Settings → System log** is a terminal-style view of every error the system hits, from every device:
+- **App:** crashes and unhandled errors in the page.
+- **Sync:** saves or live updates that failed.
+- **Backend:** failed Firebase Function calls, recorded by both the page and the function itself (with the raw Firebase/Shopify error).
+- **Shown to user:** every red error message someone saw.
+
+Click a line for details (user, page, device, error code, stack trace). **Copy** or **Download** the log to share it, **Test entry** checks logging works, and **Clear log** deletes the entries. Entries live in the `syslog` collection; the view shows the latest 300.
+
 ## Moving data in
 
 In **Settings → Sync & data → Restore / import** you can load either kind of file:

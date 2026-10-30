@@ -37,7 +37,45 @@ async function ownerFor(request) {
   return member;
 }
 
-exports.ensureVaultMembership = onCall(async request => {
+// Every callable function records its failures in the shared `syslog` collection,
+// which the Vault shows in Settings → System log. Ids count down so newest sort first.
+const QUIET_CODES = new Set(['invalid-argument', 'failed-precondition', 'not-found', 'already-exists', 'unauthenticated']);
+async function logServerError(where, error, request) {
+  try {
+    const now = Date.now();
+    const id = `${String(9e15 - now).padStart(16, '0')}-${crypto.randomBytes(4).toString('hex')}`;
+    const code = String(error && error.code || '');
+    await db.doc(`syslog/${id}`).set({
+      t: new Date(now).toISOString(),
+      level: error instanceof HttpsError && QUIET_CODES.has(code) && !error.raw ? 'warn' : 'error',
+      source: 'backend',
+      where,
+      msg: String(error && error.message || 'Unknown backend error').slice(0, 500),
+      detail: String([code && `code: ${code}`, error && error.raw, error && error.stack].filter(Boolean).join('\n')).slice(0, 3000),
+      who: '',
+      email: String(request && request.auth && request.auth.token && request.auth.token.email || ''),
+      page: '',
+      device: 'Firebase Functions (us-east1)',
+      app: 'functions'
+    });
+  } catch (logError) {
+    console.error('Could not write to syslog:', logError);
+  }
+}
+
+function logged(where, handler) {
+  return async request => {
+    try {
+      return await handler(request);
+    } catch (error) {
+      console.error(`${where} failed:`, error);
+      await logServerError(where, error, request);
+      throw error;
+    }
+  };
+}
+
+exports.ensureVaultMembership = onCall(logged('ensureVaultMembership', async request => {
   const member = await memberFor(request);
   if (BOOTSTRAP_OWNERS.has(member.email)) {
     await db.doc(`members/${member.uid}`).set({
@@ -49,7 +87,7 @@ exports.ensureVaultMembership = onCall(async request => {
     }, { merge: true });
   }
   return { role: member.role };
-});
+}));
 
 // Firebase Auth errors otherwise reach the Vault as a bare "internal" error.
 function explainAuthError(error, step) {
@@ -57,6 +95,12 @@ function explainAuthError(error, step) {
   const raw = String(error && error.message || '');
   console.error(`createVaultMember failed while ${step}:`, code, raw);
   if (error instanceof HttpsError) return error;
+  const friendly = explainAuthCode(code, raw);
+  friendly.raw = [code && `firebase-auth: ${code}`, `while ${step}`, raw, error && error.stack].filter(Boolean).join('\n');
+  return friendly;
+}
+
+function explainAuthCode(code, raw) {
   if (/unauthorized-continue-uri|invalid-continue-uri|domain/i.test(code + raw))
     return new HttpsError('failed-precondition', 'Firebase blocked the setup link. In Firebase → Authentication → Settings → Authorized domains, add yartproductions.github.io.');
   if (/insufficient-permission|permission|PERMISSION_DENIED|403/i.test(code + raw))
@@ -66,10 +110,10 @@ function explainAuthError(error, step) {
   if (/email-already-exists/i.test(code)) return new HttpsError('already-exists', 'That email already has a login. Try adding it again.');
   if (/invalid-email/i.test(code)) return new HttpsError('invalid-argument', 'Enter a valid email address.');
   if (/too-many|quota|RESOURCE_EXHAUSTED/i.test(code + raw)) return new HttpsError('resource-exhausted', 'Firebase is rate-limiting new accounts. Wait a few minutes and try again.');
-  return new HttpsError('internal', `Could not add the account while ${step}: ${code || raw || 'unknown error'}`);
+  return new HttpsError('internal', `Could not add the account: ${code || raw || 'unknown error'}`);
 }
 
-exports.createVaultMember = onCall(async request => {
+exports.createVaultMember = onCall(logged('createVaultMember', async request => {
   const owner = await ownerFor(request);
   const email = String(request.data && request.data.email || '').trim().toLowerCase();
   const displayName = String(request.data && request.data.displayName || '').trim().slice(0, 80);
@@ -112,9 +156,9 @@ exports.createVaultMember = onCall(async request => {
     throw explainAuthError(error, 'making the password setup link');
   }
   return { uid: user.uid, inviteLink };
-});
+}));
 
-exports.setVaultMemberActive = onCall(async request => {
+exports.setVaultMemberActive = onCall(logged('setVaultMemberActive', async request => {
   const owner = await ownerFor(request);
   const uid = String(request.data && request.data.uid || '');
   const active = request.data && request.data.active === true;
@@ -125,7 +169,7 @@ exports.setVaultMemberActive = onCall(async request => {
   await auth.updateUser(uid, { disabled: !active });
   await snap.ref.update({ active, updatedAt: FieldValue.serverTimestamp() });
   return { active };
-});
+}));
 
 async function shopifyToken() {
   const shop = SHOPIFY_SHOP.value().replace(/\.myshopify\.com$/i, '').trim();
@@ -196,7 +240,7 @@ async function setAvailable(connection, inventoryItemId, quantity) {
   checkUserErrors(data.inventorySetQuantities);
 }
 
-exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET], timeoutSeconds: 60 }, async request => {
+exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET], timeoutSeconds: 60 }, logged('shopifySaveDraft', async request => {
   await memberFor(request);
   const sku = vaultSku(request.data && request.data.code);
   const itemRef = db.doc(`items/${sku}`);
@@ -257,9 +301,9 @@ exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, S
   units.filter(code => code !== sku).forEach(code => batch.set(db.doc(`items/${code}`), { listedIn: sku }, { merge: true }));
   await batch.commit();
   return { id: product.id, adminUrl, sku, status: product.status || 'DRAFT', quantity, units };
-});
+}));
 
-exports.shopifyActivate = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET], timeoutSeconds: 60 }, async request => {
+exports.shopifyActivate = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET], timeoutSeconds: 60 }, logged('shopifyActivate', async request => {
   await memberFor(request);
   const sku = vaultSku(request.data && request.data.code);
   const itemRef = db.doc(`items/${sku}`);
@@ -286,4 +330,4 @@ exports.shopifyActivate = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SH
     : { status: 'list', updatedAt: now, listedIn: sku }, { merge: true }));
   await batch.commit();
   return { id: product.id, status: product.status, quantity: units.length, units };
-});
+}));
