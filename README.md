@@ -61,7 +61,13 @@ Every listing packet has two buttons:
 - **Shopify CSV:** in any store's admin, go to *Products → Import*.
 - **Photos (.zip):** drag the photos onto the product.
 
-With Firebase Functions deployed, Settings can switch Shopify to **Create Shopify drafts**. The function creates an unpublished Shopify product, sets quantity to one, and uses the permanent Vault record code as the variant SKU (`VR-00001`). Configure the `SHOPIFY_SHOP`, `SHOPIFY_CLIENT_ID`, and `SHOPIFY_CLIENT_SECRET` Firebase secrets; never put them in `config.js` or Firestore. The Shopify app needs `write_products` and `write_inventory` access.
+With Firebase Functions deployed, Settings can switch Shopify to **Create Shopify drafts**. The listing flow is:
+
+1. **Quantity in this listing:** use − / ＋ in the packet to pull in other in-stock units from the same purchase with the same title. Those units link to this listing and can't be listed separately.
+2. **Create Shopify draft:** creates an unpublished product (SKU = the Vault code, e.g. `VR-00001`), sets Shopify's quantity to the number of units, and opens the product in a new tab.
+3. **Activate Shopify listing:** switches the Shopify product from Draft to Active and, once Shopify confirms, moves every unit in the listing to **Listed** in the Vault.
+
+**Update Shopify draft / listing** re-syncs title, price, photos and quantity at any time. Configure the `SHOPIFY_SHOP`, `SHOPIFY_CLIENT_ID`, and `SHOPIFY_CLIENT_SECRET` Firebase secrets; never put them in `config.js` or Firestore. The Shopify app needs `write_products` and `write_inventory` access.
 
 ## Moving data in
 

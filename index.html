@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Obsidian Vault</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<script src="config.js?v=shopify-20261029"></script>
+<script src="config.js?v=shopify-activate-20261029"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -738,16 +738,26 @@ function packetCard(it, pk, photos, up, sh) {
   const canUp = !!S.assets;
   const drop = photos.length + up < 12 ? (canUp ? `<label class="drop" data-drop="${esc(it.code)}">${ic('photo', 22)}<span>＋ Add photos<br><span class="mut2">or drop here</span></span><input type="file" accept="image/jpeg,image/png,image/webp" multiple data-upload="${esc(it.code)}" style="display:none"></label>` : `<div class="drop" style="cursor:default">${ic('lock', 18)}<span class="mut2">Uploads need edit access</span></div>`) : '';
   const connected = ShopifyAdapter.configured();
+  const live = pk.shopifyStatus === 'ACTIVE';
+  const parent = it.listedIn && it.listedIn !== it.code && S.items[it.listedIn] ? it.listedIn : '';
+  const units = listingUnitsOf(it); const pool = unitPool(it); const maxQty = 1 + pool.filter(i => !units.includes(i.code)).length + units.length - 1;
+  const synced = pk.shopifyId && num(pk.shopifyQty || 1) !== units.length;
+  const qtyRow = parent ? '' : `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border-radius:12px;background:var(--card2);border:1px solid var(--line)">
+      <div><div style="font-weight:500;font-size:14px">${ic('layers', 14)} Quantity in this listing</div><div class="sm mut2" style="margin-top:3px">${maxQty > 1 ? `${maxQty} matching unit${maxQty > 1 ? 's' : ''} in stock from ${esc(it.purchaseId)}` : 'One unit — no other matching units from this purchase'}${units.length > 1 ? ` · ${units.map(c => esc(c)).join(', ')}` : ''}${synced ? ' · <span style="color:#F2C063">Shopify shows ' + num(pk.shopifyQty || 1) + ' — press Update to sync</span>' : ''}</div></div>
+      <div class="acts" style="align-items:center"><button class="btn ic sm" data-act="pkQty" data-code="${esc(it.code)}" data-d="-1" aria-label="One fewer" ${units.length <= 1 ? 'disabled' : ''}>−</button><span class="mono" style="min-width:28px;text-align:center;font-size:18px">${units.length}</span><button class="btn ic sm" data-act="pkQty" data-code="${esc(it.code)}" data-d="1" aria-label="One more" ${units.length >= maxQty ? 'disabled' : ''}>＋</button></div></div>`;
   return `<section class="card pad" style="display:flex;flex-direction:column;gap:18px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><h2>Shopify listing packet ${pk.code ? codeChip(pk.code) : ''}</h2><div class="sm mut2" style="margin-top:4px">JPEG, PNG or WebP · up to 12 photos · large photos are resized automatically</div></div>
-      <span style="font-size:11px;font-weight:600;letter-spacing:1.4px;color:${pk.shopifyId ? '#5FE6AC' : '#F2C063'};padding:5px 10px;border-radius:6px;background:${pk.shopifyId ? '#0F2A1F' : '#2B2312'}">${pk.shopifyId ? 'DRAFT CREATED' : 'DRAFT ONLY'}</span></div>
+      <span style="font-size:11px;font-weight:600;letter-spacing:1.4px;color:${live ? '#06120D' : pk.shopifyId ? '#5FE6AC' : '#F2C063'};padding:5px 10px;border-radius:6px;background:${live ? '#3DDC97' : pk.shopifyId ? '#0F2A1F' : '#2B2312'}">${live ? 'ACTIVE ON SHOPIFY' : pk.shopifyId ? 'SHOPIFY DRAFT' : 'NOT ON SHOPIFY'}</span></div>
+    ${parent ? `<div class="notice info"><div>This unit is included in the Shopify listing for <a href="#/item/${encodeURIComponent(it.listedIn)}">${esc(it.listedIn)}</a>. Manage photos, quantity and Shopify from that record.</div></div>` : ''}
     <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px">${tiles}${busy}${drop}</div>
     <div class="grid g4" style="gap:14px">${fIn(it, 'packet.title', 'Listing title', { cls: 'span3', icon: 'tag', ph: it.title })}${fIn(it, 'packet.price', 'Price', { money: 1, icon: 'cash', ph: it.resale })}
       <div class="fld spanall"><label for="if-packet-description"><span class="li">${ic('book', 14, 1.9)}</span>Listing description</label><textarea class="ta" id="if-packet-description" data-ifield="packet.description" data-code="${esc(it.code)}" rows="4" placeholder="Condition, what's included, testing notes…">${esc(ival(it, 'packet.description') || '')}</textarea></div></div>
+    ${qtyRow}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:16px">
       <span class="sm mut2">${connected ? `Shopify drafts enabled${sh.store ? ': ' + esc(sh.store) : ''} · SKU ${esc(it.code)}` : 'Shopify draft creation is off — export still works. <a href="#/settings">Configure it</a>'}</span>
       <div class="acts"><button class="btn" data-act="pkZip" data-code="${esc(it.code)}">${ic('down', 16)}Photos (.zip)</button><button class="btn" data-act="pkCsv" data-code="${esc(it.code)}">${ic('down', 16)}Shopify CSV</button>
-      ${connected ? `<button class="btn pri" data-act="pkPush" data-code="${esc(it.code)}">${ic('shop', 16)}${pk.shopifyId ? 'Update Shopify draft' : 'Create Shopify draft'}</button>` : ''}${pk.shopifyUrl ? `<a class="btn" href="${esc(pk.shopifyUrl)}" target="_blank" rel="noopener">Open in Shopify ↗</a>` : ''}</div></div></section>`;
+      ${connected && !parent ? (!pk.shopifyId ? `<button class="btn pri" data-act="pkPush" data-code="${esc(it.code)}">${ic('shop', 16)}Create Shopify draft</button>`
+        : `<button class="btn ${live ? 'pri' : ''}" data-act="pkPush" data-code="${esc(it.code)}">${ic('shop', 16)}${live ? 'Update Shopify listing' : 'Update Shopify draft'}</button>${live ? '' : `<button class="btn pri" data-act="pkActivate" data-code="${esc(it.code)}">${ic('check', 16)}Activate Shopify listing</button>`}`) : ''}${pk.shopifyUrl ? `<a class="btn" href="${esc(pk.shopifyUrl)}" target="_blank" rel="noopener">Open in Shopify ↗</a>` : ''}</div></div></section>`;
 }
 function saleCard(it) {
   const s = it.sale;
@@ -1069,8 +1079,17 @@ async function savePhotos(code, photos, verb) { try { await write(() => ref('ite
 // ── Shopify: export + Firebase Function adapter ───────────────────
 const ShopifyAdapter = {
   configured() { return S.mode === 'firebase' && S.fb && (S.settings.shopify || {}).mode === 'firebase'; },
-  pushDraft(code) { return S.fb.call('shopifySaveDraft', { code }); }
+  pushDraft(code) { return S.fb.call('shopifySaveDraft', { code }); },
+  activate(code) { return S.fb.call('shopifyActivate', { code }); }
 };
+// Other in-stock units from the same purchase with the same title can join this listing.
+function unitPool(it) {
+  if (!it.purchaseId) return [];
+  return itemsArr().filter(i => i.code !== it.code && i.purchaseId === it.purchaseId && (i.title || '').trim() === (it.title || '').trim()
+    && !['sold', 'arch'].includes(i.status) && (!i.listedIn || i.listedIn === it.code) && !(i.packet || {}).shopifyId && !((i.packet || {}).units || []).filter(c => c !== i.code).length)
+    .sort((a, b) => a.code.localeCompare(b.code));
+}
+function listingUnitsOf(it) { const u = ((it.packet || {}).units || []).filter(c => c !== it.code && S.items[c] && !['sold', 'arch'].includes(S.items[c].status)); return [it.code, ...u]; }
 const descHtml = t => String(t || '').split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
 function packetOf(it) { const pk = it.packet || {}; return { title: pk.title || it.title, price: num(pk.price || it.resale), description: pk.description || it.defect || '', photos: pk.photos || [] }; }
 function csvCell(v) { v = String(v ?? ''); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
@@ -1243,10 +1262,35 @@ const ACT = {
     const productTab = window.open('', '_blank'); if (productTab) productTab.opener = null;
     try { let lt = (it.packet || {}).code; if (!lt) { lt = await nextCode('LT'); await write(() => ref('items/' + it.code).update({ packet: { code: lt } })); }
       const res = await ShopifyAdapter.pushDraft(it.code);
-      await write(() => ref('items/' + it.code).update({ packet: { shopifyId: String(res.id || ''), shopifyUrl: String(res.adminUrl || '') }, status: it.status === 'prep' ? 'list' : it.status }));
+      await write(() => ref('items/' + it.code).update({ packet: { shopifyId: String(res.id || ''), shopifyUrl: String(res.adminUrl || ''), shopifyStatus: String(res.status || 'DRAFT'), shopifyQty: num(res.quantity) || 1 } }));
       if (productTab && res.adminUrl) productTab.location = res.adminUrl; else if (productTab) productTab.close();
       logAct('LT', (it.packet || {}).shopifyId ? 'updated the Shopify draft for' : 'created a Shopify draft for', lt, it.title, S.settings.shopify.store || '', [it.code]); toast('Shopify draft saved.');
     } catch (e) { if (productTab) productTab.close(); toast((e && e.message) || 'Shopify could not save the draft. Your packet is still safe in the Vault.', 'err'); }
+  },
+  pkActivate: async el => {
+    const it = S.items[el.dataset.code]; if (!ShopifyAdapter.configured()) return go('#/settings'); const pk = it.packet || {};
+    if (!pk.shopifyId) return toast('Create the Shopify draft first.', 'err');
+    const n = listingUnitsOf(it).length;
+    if (!await confirmBox({ title: `Activate ${it.code} on Shopify?`, body: `The product goes live on Shopify with a quantity of ${n}, and ${n > 1 ? `all ${n} units move` : 'the item moves'} to Listed in the Vault.`, ok: 'Activate listing' })) return;
+    el.disabled = true;
+    try {
+      const res = await ShopifyAdapter.activate(it.code);
+      logAct('LT', 'activated the Shopify listing for', pk.code || it.code, it.title, `Quantity ${res.quantity}`, res.units || [it.code], STATUS[it.status] ? STATUS[it.status][0] : it.status, 'Listed');
+      toast(`Live on Shopify — ${res.quantity} unit${res.quantity > 1 ? 's' : ''} listed.`);
+    } catch (e) { el.disabled = false; toast((e && e.message) || 'Shopify could not activate the listing. Nothing changed in the Vault.', 'err'); }
+  },
+  pkQty: async el => {
+    const it = S.items[el.dataset.code]; const cur = listingUnitsOf(it); const d = +el.dataset.d;
+    let next;
+    if (d > 0) { const add = unitPool(it).find(i => !cur.includes(i.code)); if (!add) return toast('No more matching units in stock.', 'err'); next = [...cur, add.code]; }
+    else { if (cur.length <= 1) return; next = cur.slice(0, -1); }
+    const removed = cur.filter(c => !next.includes(c)); const added = next.filter(c => !cur.includes(c));
+    try {
+      await write(() => ref('items/' + it.code).update({ packet: { units: next }, updatedAt: nowISO() }), it.code);
+      for (const c of added) await write(() => ref('items/' + c).update({ listedIn: it.code, updatedAt: nowISO() }), c);
+      for (const c of removed) await write(() => ref('items/' + c).update({ listedIn: '', updatedAt: nowISO() }), c);
+      logAct('LT', `set listing quantity to ${next.length} for`, it.code, it.title, '', next);
+    } catch (e) {}
   },
   // intake
   inMulti: el => { S.ui.intake.multi = el.dataset.v === '1'; if (!S.ui.intake.multi) S.ui.intake.f.qty = 1; render(); },

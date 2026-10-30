@@ -5,7 +5,7 @@ const { FieldValue, getFirestore } = require('firebase-admin/firestore');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const { HttpsError, onCall } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
-const { vaultSku } = require('./sku');
+const { vaultSku, listingUnits } = require('./sku');
 
 initializeApp();
 setGlobalOptions({ region: 'us-east1', maxInstances: 5 });
@@ -129,6 +129,42 @@ function checkUserErrors(payload) {
   return payload;
 }
 
+// Works out which physical units a listing covers and checks each is still sellable.
+async function resolveUnits(sku, packet) {
+  const codes = listingUnits(sku, packet.units);
+  const units = [];
+  for (const code of codes) {
+    const snap = code === sku ? null : await db.doc(`items/${code}`).get();
+    if (snap && !snap.exists) continue;
+    const data = snap ? snap.data() : null;
+    if (data) {
+      if (data.status === 'sold' || data.status === 'arch') continue;
+      if (data.listedIn && data.listedIn !== sku) continue;
+      if (data.packet && data.packet.shopifyId) continue;
+    }
+    units.push(code);
+  }
+  return units;
+}
+
+async function primaryLocationId(connection) {
+  const data = await shopifyGraphql(connection, `query PrimaryLocation { location { id } }`);
+  return data.location ? data.location.id : null;
+}
+
+async function setAvailable(connection, inventoryItemId, quantity) {
+  const locationId = await primaryLocationId(connection);
+  if (!locationId) return;
+  const activate = await shopifyGraphql(connection,
+    `mutation ActivateInventory($inventoryItemId: ID!, $locationId: ID!, $key: String!) { inventoryActivate(inventoryItemId: $inventoryItemId, locationId: $locationId) @idempotent(key: $key) { inventoryLevel { id } userErrors { field message } } }`,
+    { inventoryItemId, locationId, key: crypto.randomUUID() });
+  checkUserErrors(activate.inventoryActivate);
+  const data = await shopifyGraphql(connection,
+    `mutation SetAvailable($input: InventorySetQuantitiesInput!, $key: String!) { inventorySetQuantities(input: $input) @idempotent(key: $key) { inventoryAdjustmentGroup { reason } userErrors { field message } } }`,
+    { key: crypto.randomUUID(), input: { name: 'available', reason: 'correction', referenceDocumentUri: 'obsidian-vault://listing', quantities: [{ inventoryItemId, locationId, quantity, changeFromQuantity: null }] } });
+  checkUserErrors(data.inventorySetQuantities);
+}
+
 exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET], timeoutSeconds: 60 }, async request => {
   await memberFor(request);
   const sku = vaultSku(request.data && request.data.code);
@@ -137,10 +173,13 @@ exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, S
   if (!itemSnap.exists) throw new HttpsError('not-found', 'Vault item not found.');
   const item = itemSnap.data();
   const packet = item.packet || {};
+  if (item.listedIn && item.listedIn !== sku) throw new HttpsError('failed-precondition', `This unit is already part of the ${item.listedIn} listing.`);
   const title = String(packet.title || item.title || '').trim();
   const price = Number(packet.price || item.resale);
   if (!title) throw new HttpsError('failed-precondition', 'Add a listing title first.');
   if (!(price > 0)) throw new HttpsError('failed-precondition', 'Add a valid listing price first.');
+  const units = await resolveUnits(sku, packet);
+  const quantity = units.length;
 
   const connection = await shopifyToken();
   const productInput = {
@@ -161,13 +200,13 @@ exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, S
   if (packet.shopifyId) {
     productInput.id = packet.shopifyId;
     const data = await shopifyGraphql(connection,
-      `mutation UpdateProduct($product: ProductUpdateInput!) { productUpdate(product: $product) { product { id handle variants(first: 1) { nodes { id inventoryItem { id } } } } userErrors { field message } } }`,
+      `mutation UpdateProduct($product: ProductUpdateInput!) { productUpdate(product: $product) { product { id handle status variants(first: 1) { nodes { id inventoryItem { id } } } } userErrors { field message } } }`,
       { product: productInput });
     product = checkUserErrors(data.productUpdate).product;
   } else {
     productInput.status = 'DRAFT';
     const data = await shopifyGraphql(connection,
-      `mutation CreateProduct($product: ProductCreateInput!, $media: [CreateMediaInput!]) { productCreate(product: $product, media: $media) { product { id handle variants(first: 1) { nodes { id inventoryItem { id } } } } userErrors { field message } } }`,
+      `mutation CreateProduct($product: ProductCreateInput!, $media: [CreateMediaInput!]) { productCreate(product: $product, media: $media) { product { id handle status variants(first: 1) { nodes { id inventoryItem { id } } } } userErrors { field message } } }`,
       { product: productInput, media });
     product = checkUserErrors(data.productCreate).product;
   }
@@ -178,17 +217,42 @@ exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, S
     { productId: product.id, variants: [{ id: variant.id, price: price.toFixed(2), inventoryPolicy: 'DENY', inventoryItem: { sku, tracked: true, requiresShipping: true } }] });
   checkUserErrors(variantData.productVariantsBulkUpdate);
 
-  if (!packet.shopifyId) {
-    const locationData = await shopifyGraphql(connection, `query PrimaryLocation { location { id } }`);
-    if (locationData.location) {
-      const inventoryData = await shopifyGraphql(connection,
-        `mutation ActivateInventory($inventoryItemId: ID!, $locationId: ID!, $available: Int, $key: String!) { inventoryActivate(inventoryItemId: $inventoryItemId, locationId: $locationId, available: $available) @idempotent(key: $key) { inventoryLevel { id } userErrors { field message } } }`,
-        { inventoryItemId: variant.inventoryItem.id, locationId: locationData.location.id, available: 1, key: crypto.randomUUID() });
-      checkUserErrors(inventoryData.inventoryActivate);
-    }
-  }
+  // Shopify's quantity always matches the number of Vault units in this listing.
+  await setAvailable(connection, variant.inventoryItem.id, quantity);
 
   const adminUrl = `https://admin.shopify.com/store/${connection.shop}/products/${product.id.split('/').pop()}`;
-  await itemRef.set({ packet: { shopifyId: product.id, shopifyUrl: adminUrl, shopifySku: sku, shopifySyncedAt: FieldValue.serverTimestamp() } }, { merge: true });
-  return { id: product.id, adminUrl, sku };
+  const batch = db.batch();
+  batch.set(itemRef, { packet: { shopifyId: product.id, shopifyUrl: adminUrl, shopifySku: sku, shopifyStatus: product.status || 'DRAFT', shopifyQty: quantity, shopifyInventoryItemId: variant.inventoryItem.id, units, shopifySyncedAt: FieldValue.serverTimestamp() } }, { merge: true });
+  units.filter(code => code !== sku).forEach(code => batch.set(db.doc(`items/${code}`), { listedIn: sku }, { merge: true }));
+  await batch.commit();
+  return { id: product.id, adminUrl, sku, status: product.status || 'DRAFT', quantity, units };
+});
+
+exports.shopifyActivate = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET], timeoutSeconds: 60 }, async request => {
+  await memberFor(request);
+  const sku = vaultSku(request.data && request.data.code);
+  const itemRef = db.doc(`items/${sku}`);
+  const itemSnap = await itemRef.get();
+  if (!itemSnap.exists) throw new HttpsError('not-found', 'Vault item not found.');
+  const item = itemSnap.data();
+  const packet = item.packet || {};
+  if (!packet.shopifyId) throw new HttpsError('failed-precondition', 'Create the Shopify draft first.');
+  if (item.status === 'sold' || item.status === 'arch') throw new HttpsError('failed-precondition', 'This item is no longer in stock.');
+  const units = await resolveUnits(sku, packet);
+
+  const connection = await shopifyToken();
+  if (packet.shopifyInventoryItemId) await setAvailable(connection, packet.shopifyInventoryItemId, units.length);
+  const data = await shopifyGraphql(connection,
+    `mutation ActivateProduct($product: ProductUpdateInput!) { productUpdate(product: $product) { product { id status } userErrors { field message } } }`,
+    { product: { id: packet.shopifyId, status: 'ACTIVE' } });
+  const product = checkUserErrors(data.productUpdate).product;
+
+  // Only after Shopify confirms do the Vault records move to Listed.
+  const now = new Date().toISOString();
+  const batch = db.batch();
+  units.forEach(code => batch.set(db.doc(`items/${code}`), code === sku
+    ? { status: 'list', updatedAt: now, packet: { shopifyStatus: product.status, shopifyQty: units.length, units, shopifyActivatedAt: FieldValue.serverTimestamp() } }
+    : { status: 'list', updatedAt: now, listedIn: sku }, { merge: true }));
+  await batch.commit();
+  return { id: product.id, status: product.status, quantity: units.length, units };
 });
