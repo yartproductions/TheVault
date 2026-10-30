@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Obsidian Vault</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<script src="config.js?v=firebase-20261029"></script>
+<script src="config.js?v=shopify-20261029"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -246,13 +246,13 @@ const CODES = {
 };
 const codeType = c => { const p = String(c || '').split('-')[0]; return CODES[p] ? p : 'SYS'; };
 const codeChip = (c, act = true) => { const t = CODES[codeType(c)]; return `<button type="button" class="code" style="color:${t[1]};background:${t[2]}" ${act ? `data-act="goto" data-code="${esc(c)}"` : 'tabindex="-1"'} title="${esc(t[0])}">${esc(c)}</button>`; };
-const DEFAULT_SETTINGS = { owners: { o1: 'Owner 1', o2: 'Owner 2' }, bins: ['A-01', 'A-02', 'B-01', 'B-02', 'CAGE-1', 'BACK'], feePct: 13.25, shipFlat: 15, riskPct: 3, autoLock: 15, shopify: { mode: 'export', store: '', relayUrl: '', notes: '' } };
+const DEFAULT_SETTINGS = { owners: { o1: 'Owner 1', o2: 'Owner 2' }, bins: ['A-01', 'A-02', 'B-01', 'B-02', 'CAGE-1', 'BACK'], feePct: 13.25, shipFlat: 15, riskPct: 3, autoLock: 15, shopify: { mode: 'export', store: '' } };
 const OWNER_COLORS = { o1: ['#3DDC97', '#06120D'], o2: ['#8EC3FF', '#071422'] };
 
 // ── state ─────────────────────────────────────────────────────────
 const S = {
   db: null, live: false, mode: 'local', fb: null, needLogin: false, login: null, assets: null, user: null, dl: null, uid: null,
-  items: {}, customers: {}, purchases: {}, sales: {}, txs: {}, activity: {}, settings: { ...DEFAULT_SETTINGS }, loaded: {},
+  items: {}, customers: {}, purchases: {}, sales: {}, txs: {}, activity: {}, members: {}, settings: { ...DEFAULT_SETTINGS }, loaded: {},
   pending: 0, syncErr: null, uploads: {},
   owner: null, pins: null, pinsLoaded: false,
   lock: { who: 'o1', pin: '', err: '', fails: 0, until: 0, setup: { p1: '', c1: '', p2: '', c2: '' } },
@@ -260,7 +260,7 @@ const S = {
   ui: {
     inv: { tab: 'all', q: '' }, master: { tab: 'all', bin: 'all', cat: 'all', q: '', sel: {}, page: 0 },
     cust: { q: '', src: 'all', sel: null }, books: { dir: 'all', cat: 'all', who: 'all', month: localISO().slice(0, 7) },
-    act: { type: 'all', who: 'all', q: '' }, intake: null, sale: null, edit: {}
+    act: { type: 'all', who: 'all', q: '' }, intake: null, sale: null, edit: {}, memberInvite: null
   },
   modal: null, toasts: [], lastAct: Date.now()
 };
@@ -337,10 +337,11 @@ function claudeDB(db) {
 const FB_VERSION = '10.12.2';
 async function firebaseBackend(cfg, opts = {}) {
   const base = `https://www.gstatic.com/firebasejs/${FB_VERSION}/`;
-  const [app, fs, au, st] = await Promise.all(['firebase-app', 'firebase-firestore', 'firebase-auth', 'firebase-storage'].map(m => import(base + m + '.js')));
+  const [app, fs, au, st, fu] = await Promise.all(['firebase-app', 'firebase-firestore', 'firebase-auth', 'firebase-storage', 'firebase-functions'].map(m => import(base + m + '.js')));
   const fapp = app.initializeApp(cfg);
   let db; try { db = fs.initializeFirestore(fapp, { localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() }) }); } catch (e) { db = fs.getFirestore(fapp); }
   const auth = au.getAuth(fapp); const storage = st.getStorage(fapp);
+  const functions = fu.getFunctions(fapp, 'us-east1');
   const wrap = s => ({ id: s.id, exists: s.exists(), data: () => s.data(), metadata: s.metadata });
   const flat = (o, pre = '', out = {}) => { for (const [k, v] of Object.entries(o)) { const key = pre ? pre + '.' + k : k; if (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length) flat(v, key, out); else out[key] = v; } return out; };
   const mapErr = e => { const c = (e && e.code) || ''; return c.includes('permission-denied') ? { code: 'revoked', message: 'This account is not allowed in the vault.' } : c.includes('resource-exhausted') ? { code: 'quota_exceeded', message: e.message } : c.includes('unavailable') ? { code: 'unavailable', message: e.message } : e; };
@@ -386,7 +387,8 @@ async function firebaseBackend(cfg, opts = {}) {
     onAuth: cb => au.onAuthStateChanged(auth, cb),
     signIn: (email, pw) => au.signInWithEmailAndPassword(auth, email, pw),
     resetPw: email => au.sendPasswordResetEmail(auth, email),
-    signOut: () => au.signOut(auth)
+    signOut: () => au.signOut(auth),
+    call: async (name, data) => (await fu.httpsCallable(functions, name)(data)).data
   };
 }
 
@@ -450,6 +452,7 @@ async function boot() {
   if (!S.db) { S.mode = 'local'; S.live = false; S.db = localDB(); S.assets = localAssets(); }
   if (S.mode === 'firebase') {
     await new Promise(res => S.fb.onAuth(u => { if (u) { S.uid = u.uid; S.fbEmail = u.email; S.needLogin = false; res(); } else { S.needLogin = true; S.uid = null; render(); } }));
+    await S.fb.call('ensureVaultMembership', {}).catch(() => {});
   }
   const COLS = ['items', 'customers', 'purchases', 'sales', 'txs', 'activity'];
   for (const col of COLS) {
@@ -463,6 +466,9 @@ async function boot() {
     S.settings = { ...DEFAULT_SETTINGS, ...d, owners: { ...DEFAULT_SETTINGS.owners, ...(d.owners || {}) }, shopify: { ...DEFAULT_SETTINGS.shopify, ...(d.shopify || {}) } };
     S.loaded.settings = true; renderSoon();
   }, () => { S.loaded.settings = true; renderSoon(); });
+  if (S.mode === 'firebase') S.db.collection('members').limit(1000).onSnapshot(snap => {
+    const m = {}; snap.docs.forEach(d => { if (d.exists) m[d.id] = d.data(); }); S.members = m; renderSoon();
+  }, () => {});
   await loadPins();
   const saved = (() => { try { return sessionStorage.getItem('ov.owner'); } catch (e) { return null; } })();
   if (saved && S.pins && S.pins.o1) S.owner = saved;
@@ -728,7 +734,7 @@ function packetCard(it, pk, photos, up, sh) {
   const busy = Array.from({ length: up }, () => `<div class="ph" style="display:grid;place-items:center"><span class="sm mut">Uploading…</span></div>`).join('');
   const canUp = !!S.assets;
   const drop = photos.length + up < 12 ? (canUp ? `<label class="drop" data-drop="${esc(it.code)}">${ic('photo', 22)}<span>＋ Add photos<br><span class="mut2">or drop here</span></span><input type="file" accept="image/jpeg,image/png,image/webp" multiple data-upload="${esc(it.code)}" style="display:none"></label>` : `<div class="drop" style="cursor:default">${ic('lock', 18)}<span class="mut2">Uploads need edit access</span></div>`) : '';
-  const connected = sh.mode === 'relay' && sh.relayUrl;
+  const connected = ShopifyAdapter.configured();
   return `<section class="card pad" style="display:flex;flex-direction:column;gap:18px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><h2>Shopify listing packet ${pk.code ? codeChip(pk.code) : ''}</h2><div class="sm mut2" style="margin-top:4px">JPEG, PNG or WebP · up to 12 photos · large photos are resized automatically</div></div>
       <span style="font-size:11px;font-weight:600;letter-spacing:1.4px;color:${pk.shopifyId ? '#5FE6AC' : '#F2C063'};padding:5px 10px;border-radius:6px;background:${pk.shopifyId ? '#0F2A1F' : '#2B2312'}">${pk.shopifyId ? 'DRAFT CREATED' : 'DRAFT ONLY'}</span></div>
@@ -736,7 +742,7 @@ function packetCard(it, pk, photos, up, sh) {
     <div class="grid g4" style="gap:14px">${fIn(it, 'packet.title', 'Listing title', { cls: 'span3', icon: 'tag', ph: it.title })}${fIn(it, 'packet.price', 'Price', { money: 1, icon: 'cash', ph: it.resale })}
       <div class="fld spanall"><label for="if-packet-description"><span class="li">${ic('book', 14, 1.9)}</span>Listing description</label><textarea class="ta" id="if-packet-description" data-ifield="packet.description" data-code="${esc(it.code)}" rows="4" placeholder="Condition, what's included, testing notes…">${esc(ival(it, 'packet.description') || '')}</textarea></div></div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:16px">
-      <span class="sm mut2">${connected ? `Connected store: ${esc(sh.store || 'custom relay')}` : 'No Shopify store connected — export works with any store. <a href="#/settings">Connect one</a>'}</span>
+      <span class="sm mut2">${connected ? `Shopify drafts enabled${sh.store ? ': ' + esc(sh.store) : ''} · SKU ${esc(it.code)}` : 'Shopify draft creation is off — export still works. <a href="#/settings">Configure it</a>'}</span>
       <div class="acts"><button class="btn" data-act="pkZip" data-code="${esc(it.code)}">${ic('down', 16)}Photos (.zip)</button><button class="btn" data-act="pkCsv" data-code="${esc(it.code)}">${ic('down', 16)}Shopify CSV</button>
       ${connected ? `<button class="btn pri" data-act="pkPush" data-code="${esc(it.code)}">${ic('shop', 16)}${pk.shopifyId ? 'Update Shopify draft' : 'Create Shopify draft'}</button>` : ''}${pk.shopifyUrl ? `<a class="btn" href="${esc(pk.shopifyUrl)}" target="_blank" rel="noopener">Open in Shopify ↗</a>` : ''}</div></div></section>`;
 }
@@ -912,6 +918,9 @@ function pActivity() {
 function pSettings() {
   const st = S.settings; const sh = st.shopify || {};
   const sf = (path, label, o = {}) => `<div class="fld ${o.cls || ''}"><label for="sf-${path.replace(/\./g, '-')}">${label}</label><input class="in ${o.mono ? 'mono' : ''}" id="sf-${path.replace(/\./g, '-')}" data-sfield="${path}" ${o.num ? 'inputmode="decimal"' : ''} value="${esc(path.split('.').reduce((a, k) => (a || {})[k], st) ?? '')}" placeholder="${esc(o.ph || '')}"></div>`;
+  const me = S.members[S.uid] || {}; const canManage = me.role === 'owner' || ['paulckinckay@gmail.com', 'kohlindersjohn@gmail.com'].includes(S.fbEmail || '');
+  const members = Object.entries(S.members).sort((a, b) => String(a[1].email).localeCompare(String(b[1].email)));
+  const invite = S.ui.memberInvite;
   return head('Owners, Shopify, storage and data', 'Settings') + `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));align-items:start;gap:20px">
     <section class="card pad" style="display:flex;flex-direction:column;gap:16px"><h2>Owners &amp; security</h2>
       <div class="grid g2 stack">${sf('owners.o1', 'Owner 1 name')}${sf('owners.o2', 'Owner 2 name')}</div>
@@ -919,17 +928,22 @@ function pSettings() {
       <div class="fld"><span class="lb">PINs</span><button class="btn" data-act="resetPins">Change both PINs</button></div></div>
       <p class="sm mut2" style="margin:0;line-height:1.5">Names show everywhere: activity, bookkeeping, intake. PINs are hashed and stored privately to your signed-in account.</p></section>
 
+    ${S.mode === 'firebase' ? `<section class="card pad" style="display:flex;flex-direction:column;gap:16px"><div><h2>Vault access accounts</h2><div class="sm mut2" style="margin-top:4px">Firebase sign-ins allowed to open this vault. Owner PINs still control the workspace identity.</div></div>
+      <div style="display:flex;flex-direction:column;gap:8px">${members.length ? members.map(([uid, m]) => `<div class="card pad-s" style="background:var(--card2);display:flex;align-items:center;gap:10px"><span class="av" style="width:30px;height:30px;background:${m.active === false ? '#262D2A' : '#13243A'};color:${m.active === false ? '#8C9C95' : '#8EC3FF'}">${esc((m.displayName || m.email || '?')[0].toUpperCase())}</span><div style="min-width:0;flex:1"><div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis">${esc(m.displayName || m.email)}</div><div class="sm mut2 mono" style="overflow:hidden;text-overflow:ellipsis">${esc(m.email || '')} · ${esc(m.role || 'member')}${m.active === false ? ' · disabled' : ''}</div></div>${canManage && uid !== S.uid ? `<button class="btn sm" data-act="memberToggle" data-uid="${esc(uid)}" data-active="${m.active === false ? '1' : '0'}">${m.active === false ? 'Enable' : 'Disable'}</button>` : ''}</div>`).join('') : '<div class="sm mut2">Loading accounts…</div>'}</div>
+      ${canManage ? `<div class="grid g2 stack"><div class="fld"><label for="member-name">Name</label><input class="in" id="member-name" placeholder="Team member"></div><div class="fld"><label for="member-email">Email</label><input class="in" id="member-email" type="email" placeholder="name@example.com"></div><div class="fld"><label for="member-role">Access level</label><select class="sel" id="member-role"><option value="member">Member</option><option value="owner">Owner</option></select></div><div class="fld" style="justify-content:flex-end"><button class="btn pri" data-act="memberInvite">${ic('plus', 16, 2)}Add account</button></div></div>` : '<div class="notice">Only a vault owner can add or disable accounts.</div>'}
+      ${invite ? `<div class="notice info" style="flex-direction:column;align-items:stretch"><b>Account added — send this one-time setup link to ${esc(invite.email)}</b><textarea class="ta mono" id="member-link" rows="3" readonly>${esc(invite.link)}</textarea><div><button class="btn sm" data-act="memberCopy">Copy setup link</button></div></div>` : ''}</section>` : ''}
+
     <section class="card pad" style="display:flex;flex-direction:column;gap:16px"><h2>Pricing model</h2>
       <div class="grid g3 stack">${sf('feePct', 'Marketplace fee %', { num: 1, mono: 1 })}${sf('shipFlat', 'Shipping estimate $', { num: 1, mono: 1 })}${sf('riskPct', 'Risk allowance %', { num: 1, mono: 1 })}</div>
       <p class="sm mut2" style="margin:0;line-height:1.5">Used for projected margins on every item and to pre-fill eBay fees when recording a sale.</p></section>
 
-    <section class="card pad" style="display:flex;flex-direction:column;gap:16px;grid-column:1/-1"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="display:flex;align-items:center;gap:12px"><span class="cat" style="width:40px;height:40px;background:#0F2A1F;color:#5FE6AC">${ic('shop', 20)}</span><div><h2>Shopify integration</h2><div class="sm mut2" style="margin-top:3px">Not linked to any store yet — connect the store you want listings to go to.</div></div></div>
-      <span class="chip ${sh.mode === 'relay' && sh.relayUrl ? 's-prep' : 's-arch'}"><i></i>${sh.mode === 'relay' && sh.relayUrl ? 'Relay configured' : 'Export mode'}</span></div>
-      <div class="seg" style="align-self:flex-start">${[['export', 'Export (works with any store)'], ['relay', 'Direct API via relay']].map(([k, l]) => `<button class="${sh.mode === k ? 'on' : ''}" data-act="shMode" data-v="${k}">${l}</button>`).join('')}</div>
-      ${sh.mode === 'relay' ? `<div class="grid g2 stack">${sf('shopify.store', 'Store domain', { ph: 'your-store.myshopify.com', mono: 1 })}${sf('shopify.relayUrl', 'Relay URL (HTTPS)', { ph: 'https://your-relay.example.com/shopify/draft', mono: 1 })}</div>` : ''}
+    <section class="card pad" style="display:flex;flex-direction:column;gap:16px;grid-column:1/-1"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="display:flex;align-items:center;gap:12px"><span class="cat" style="width:40px;height:40px;background:#0F2A1F;color:#5FE6AC">${ic('shop', 20)}</span><div><h2>Shopify integration</h2><div class="sm mut2" style="margin-top:3px">Create Shopify draft products directly from completed Vault packets.</div></div></div>
+      <span class="chip ${sh.mode === 'firebase' ? 's-prep' : 's-arch'}"><i></i>${sh.mode === 'firebase' ? 'Firebase integration' : 'Export mode'}</span></div>
+      <div class="seg" style="align-self:flex-start">${[['export', 'Export files'], ['firebase', 'Create Shopify drafts']].map(([k, l]) => `<button class="${sh.mode === k ? 'on' : ''}" data-act="shMode" data-v="${k}">${l}</button>`).join('')}</div>
+      ${sh.mode === 'firebase' ? `<div class="grid g2 stack">${sf('shopify.store', 'Store domain', { ph: 'your-store.myshopify.com', mono: 1 })}<div class="notice info"><div><b>SKU rule</b><br>Every Shopify variant uses its permanent Vault code exactly: <span class="mono">VR-00001</span>. Quantity starts at 1 and the product remains a draft.</div></div></div>` : ''}
       <div class="grid g2 stack" style="gap:16px">
         <div class="notice info" style="flex-direction:column;gap:6px"><b>Today — Export mode</b><span>Every listing packet has <b>Shopify CSV</b> and <b>Photos (.zip)</b> buttons. In any store’s admin: <i>Products → Import</i> the CSV, then drag the photos onto the product. Nothing here is tied to a particular store.</span></div>
-        <div class="notice" style="flex-direction:column;gap:6px"><b>Plug-in point — direct API</b><span>To push drafts straight into a store you’ll need: <b>1)</b> a custom app in that store’s admin (<i>Settings → Apps → Develop apps</i>) with the <span class="mono">write_products</span> and <span class="mono">write_files</span> scopes; <b>2)</b> a small relay (e.g. a serverless function) that holds the Admin API token — browsers can’t call Shopify’s Admin API directly and the token must never be stored in this shared vault; <b>3)</b> the relay URL above. The vault sends <span class="mono">{title, descriptionHtml, price, sku, productType, photos:[urls]}</span> and expects <span class="mono">{id, adminUrl}</span> back. The hand-off lives in <span class="mono">ShopifyAdapter</span> in this page’s code.</span></div></div></section>
+        <div class="notice" style="flex-direction:column;gap:6px"><b>Direct draft creation</b><span>Firebase Functions keeps the Shopify client secret off this website. The Vault sends the permanent VR code; the function reads the saved packet, creates or updates the Shopify draft, attaches its photos, sets quantity to 1, and returns the Shopify admin link.</span></div></div></section>
 
     <section class="card pad" style="display:flex;flex-direction:column;gap:14px"><div style="display:flex;justify-content:space-between;align-items:center"><div><h2>Storage locations</h2><div class="sm mut2" style="margin-top:4px">Bins used by the Master Vault</div></div></div>
       <div style="display:flex;flex-wrap:wrap;gap:8px">${st.bins.map(b => `<span class="bin" style="height:32px;gap:8px">${esc(b)} <span class="mut2">· ${itemsArr().filter(i => i.bin === b && STOCK.includes(i.status)).length}</span><button class="btn ic sm" style="width:22px;height:22px;border:0;background:transparent;box-shadow:none" data-act="binDel" data-v="${esc(b)}" aria-label="Remove ${esc(b)}">${ic('x', 12, 2)}</button></span>`).join('')}</div>
@@ -1049,21 +1063,10 @@ async function uploadPhotos(code, files) {
 }
 async function savePhotos(code, photos, verb) { try { await write(() => ref('items/' + code).update({ packet: { photos }, updatedAt: nowISO() }), 'photo order'); if (verb) logAct('LT', verb, code, (S.items[code] || {}).title); } catch (e) {} }
 
-// ── Shopify: export + plug-in adapter ─────────────────────────────
-/* ShopifyAdapter — the single hand-off point for a direct store integration.
-   The vault never stores Shopify credentials. Point settings.shopify.relayUrl at a
-   relay you control that holds the Admin API token, accepts POST JSON
-   {title, descriptionHtml, price, sku, productType, vendor, tags, photos:[{url, alt}], productId?}
-   and responds {id, adminUrl}. Photos are sent as same-origin vault URLs; the relay must
-   fetch them with the viewer's session or you can switch to uploading bytes (see notes). */
+// ── Shopify: export + Firebase Function adapter ───────────────────
 const ShopifyAdapter = {
-  configured() { const s = S.settings.shopify || {}; return s.mode === 'relay' && /^https:\/\//.test(s.relayUrl || ''); },
-  async pushDraft(payload) {
-    const s = S.settings.shopify;
-    const res = await fetch(s.relayUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    if (!res.ok) throw new Error('Relay answered ' + res.status);
-    return await res.json();
-  }
+  configured() { return S.mode === 'firebase' && S.fb && (S.settings.shopify || {}).mode === 'firebase'; },
+  pushDraft(code) { return S.fb.call('shopifySaveDraft', { code }); }
 };
 const descHtml = t => String(t || '').split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
 function packetOf(it) { const pk = it.packet || {}; return { title: pk.title || it.title, price: num(pk.price || it.resale), description: pk.description || it.defect || '', photos: pk.photos || [] }; }
@@ -1235,10 +1238,10 @@ const ACT = {
     const it = S.items[el.dataset.code]; if (!ShopifyAdapter.configured()) return go('#/settings'); const p = packetOf(it);
     if (!p.title) return toast('Add a listing title.', 'err'); if (!(p.price > 0)) return toast('Enter a valid listing price.', 'err');
     try { let lt = (it.packet || {}).code; if (!lt) { lt = await nextCode('LT'); await write(() => ref('items/' + it.code).update({ packet: { code: lt } })); }
-      const res = await ShopifyAdapter.pushDraft({ title: p.title, descriptionHtml: descHtml(p.description), price: p.price.toFixed(2), sku: it.code, productType: it.category, vendor: p.title.split(' ')[0], tags: ['obsidian-vault', it.code], photos: p.photos.filter(id => !/^(local|fs)-/.test(String(id))).map((id, i) => ({ url: new URL(photoUrl(id), location.href).href, alt: `${p.title} photo ${i + 1}` })), productId: (it.packet || {}).shopifyId || null });
+      const res = await ShopifyAdapter.pushDraft(it.code);
       await write(() => ref('items/' + it.code).update({ packet: { shopifyId: String(res.id || ''), shopifyUrl: String(res.adminUrl || '') }, status: it.status === 'prep' ? 'list' : it.status }));
       logAct('LT', (it.packet || {}).shopifyId ? 'updated the Shopify draft for' : 'created a Shopify draft for', lt, it.title, S.settings.shopify.store || '', [it.code]); toast('Shopify draft saved.');
-    } catch (e) { toast('The Shopify relay didn’t accept the draft. Check the relay URL in Settings — your packet is still saved here.', 'err'); }
+    } catch (e) { toast((e && e.message) || 'Shopify could not save the draft. Your packet is still safe in the Vault.', 'err'); }
   },
   // intake
   inMulti: el => { S.ui.intake.multi = el.dataset.v === '1'; if (!S.ui.intake.multi) S.ui.intake.f.qty = 1; render(); },
@@ -1291,6 +1294,18 @@ const ACT = {
   actWho: el => { S.ui.act.who = el.dataset.v; render(); },
   // settings
   shMode: async el => { await saveSetting({ shopify: { ...S.settings.shopify, mode: el.dataset.v } }); },
+  memberInvite: async () => {
+    const email = ($('#member-email') || {}).value || ''; const displayName = ($('#member-name') || {}).value || ''; const role = (($('#member-role') || {}).value || 'member');
+    if (!email.trim()) return toast('Enter the new account email.', 'err');
+    try { const r = await S.fb.call('createVaultMember', { email, displayName, role }); S.ui.memberInvite = { email: email.trim(), link: r.inviteLink }; render(); toast('Vault account added.'); }
+    catch (e) { toast((e && e.message) || 'Could not add that account.', 'err'); }
+  },
+  memberCopy: async () => { try { await navigator.clipboard.writeText((S.ui.memberInvite || {}).link || ''); toast('Setup link copied.'); } catch (e) { const x = $('#member-link'); if (x) { x.select(); document.execCommand('copy'); toast('Setup link copied.'); } } },
+  memberToggle: async el => {
+    const active = el.dataset.active === '1';
+    if (!await confirmBox({ title: `${active ? 'Enable' : 'Disable'} this account?`, body: active ? 'They will be able to sign in and use the Vault again.' : 'They will be signed out and blocked from the Vault.', ok: active ? 'Enable' : 'Disable', danger: active ? 0 : 1 })) return;
+    try { await S.fb.call('setVaultMemberActive', { uid: el.dataset.uid, active }); toast(`Account ${active ? 'enabled' : 'disabled'}.`); } catch (e) { toast((e && e.message) || 'Could not update that account.', 'err'); }
+  },
   binAdd: async () => { const v = ($('#bin-new').value || '').trim().toUpperCase(); if (!v) return; if (S.settings.bins.includes(v)) return toast('That bin already exists.', 'err'); await saveSetting({ bins: [...S.settings.bins, v] }); logAct('AJ', 'added storage bin', '', v); },
   binDel: async el => { const b = el.dataset.v; const n = itemsArr().filter(i => i.bin === b && STOCK.includes(i.status)).length; if (n && !await confirmBox({ title: `Remove bin ${b}?`, body: `${n} item${n > 1 ? 's are' : ' is'} still assigned to it. They keep the label until you move them.`, ok: 'Remove', danger: 1 })) return; await saveSetting({ bins: S.settings.bins.filter(x => x !== b) }); },
   backup: () => backup(),

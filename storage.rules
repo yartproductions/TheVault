@@ -3,9 +3,14 @@ rules_version = '2';
 // Keep the email list identical to firestore.rules.
 service firebase.storage {
   match /b/{bucket}/o {
+    function isMember() {
+      return request.auth != null
+        && firestore.exists(/databases/(default)/documents/members/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/members/$(request.auth.uid)).data.active == true;
+    }
     function isVaultUser() {
       return request.auth != null
-        && request.auth.token.email in ['owner1@example.com', 'owner2@example.com'];
+        && (request.auth.token.email in ['paulckinckay@gmail.com', 'kohlindersjohn@gmail.com'] || isMember());
     }
     match /photos/{file} {
       allow read: if isVaultUser();

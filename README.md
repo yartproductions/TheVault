@@ -35,12 +35,22 @@ At this point the app runs in **local mode**. Everything saves in that browser o
 
 Reload the site. It asks for the vault email and password once per device, then shows the PIN lock. The sidebar should read **"Synced · live on every device"**.
 
+### Add vault accounts
+
+After deploying the included Firebase Functions and updated rules, an owner can open **Settings → Vault access accounts**, add any number of email accounts, and copy each person's one-time password setup link. Members can use the vault; owners can also add or disable accounts. The two bootstrap owner emails in `firestore.rules` and `functions/index.js` keep the original owners from being locked out while membership records are created.
+
+Deploy the backend with:
+
+```sh
+firebase deploy --only functions,firestore:rules,storage
+```
+
 **The Firebase keys in `config.js` are not secrets.** They only identify the project. Protection comes from sign-in plus the rules from step 5.
 
 ### Photos
 
-- **`photos: 'firestore'` (default):** works on the free Spark plan. Photos are compressed to about 1600 px (around 300–600 KB each) and stored in the database. That's plenty for listings, and the free plan holds 1 GB.
-- **`photos: 'storage'`:** stores full-size originals in Cloud Storage. Cloud Storage now requires the pay-as-you-go **Blaze** plan; it stays free under the usage allowances, but a card must be on file. If you choose this:
+- **`photos: 'firestore'`:** works on the free Spark plan. Photos are compressed to about 1600 px (around 300–600 KB each) and stored in the database.
+- **`photos: 'storage'` (current configuration):** stores full-size originals in Cloud Storage and gives Shopify usable image URLs. Cloud Storage requires the pay-as-you-go **Blaze** plan. To finish setup:
   1. Go to **Build → Storage → Get started**.
   2. Paste `storage.rules`, using the same two emails as in step 5.
   3. So the "Photos (.zip)" button can download the photos, apply `cors.json` once with the Cloud Shell in Google Cloud: `gsutil cors set cors.json gs://<your-bucket>`.
@@ -51,20 +61,7 @@ Every listing packet has two buttons:
 - **Shopify CSV:** in any store's admin, go to *Products → Import*.
 - **Photos (.zip):** drag the photos onto the product.
 
-To push drafts straight into a store later, open **Settings → Shopify integration → Direct API via relay** in the app. A browser can't hold a Shopify Admin token safely, so you need two things:
-
-1. A custom app in the target store (*Settings → Apps → Develop apps*) with the `write_products` and `write_files` scopes.
-2. A small relay (for example a Cloudflare Worker or Vercel function) that keeps that token.
-
-The vault POSTs this to the relay:
-```json
-{ "title": "...", "descriptionHtml": "...", "price": "579.00", "sku": "VR-00012",
-  "productType": "Laptop", "vendor": "Apple", "tags": ["obsidian-vault","VR-00012"],
-  "photos": [{ "url": "...", "alt": "..." }], "productId": null }
-```
-and expects back `{ "id": "gid://shopify/Product/…", "adminUrl": "https://…" }`. The hand-off lives in `ShopifyAdapter` inside `index.html`.
-
-Photo URLs are sent only when you use `photos: 'storage'`. With the default `'firestore'` photos, the relay gets an empty photo list, so upload those photos from the zip.
+With Firebase Functions deployed, Settings can switch Shopify to **Create Shopify drafts**. The function creates an unpublished Shopify product, sets quantity to one, and uses the permanent Vault record code as the variant SKU (`VR-00001`). Configure the `SHOPIFY_SHOP`, `SHOPIFY_CLIENT_ID`, and `SHOPIFY_CLIENT_SECRET` Firebase secrets; never put them in `config.js` or Firestore. The Shopify app needs `write_products` and `write_inventory` access.
 
 ## Moving data in
 

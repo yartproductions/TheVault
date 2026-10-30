@@ -3,11 +3,27 @@ rules_version = '2';
 // Replace the two emails with the accounts you create in Firebase → Authentication → Users.
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isVaultUser() {
+    function isBootstrapOwner() {
       return request.auth != null
         && request.auth.token.email in ['paulckinckay@gmail.com', 'kohlindersjohn@gmail.com'];
     }
-    match /{document=**} {
+    function isMember() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/members/$(request.auth.uid)).data.active == true;
+    }
+    function isVaultUser() {
+      return isBootstrapOwner() || isMember();
+    }
+
+    match /members/{uid} {
+      allow read: if isVaultUser();
+      allow write: if false;
+    }
+    match /{collection}/{document} {
+      allow read, write: if collection != 'members' && isVaultUser();
+    }
+    match /{collection}/{document}/{nested=**} {
       allow read, write: if isVaultUser();
     }
   }

@@ -10,7 +10,7 @@ window.VAULT_CONFIG = {
   // Where listing photos are stored when Firebase is on:
   //   'firestore' — works on the free Spark plan (photos compressed to ~1600px)
   //   'storage'   — full-size files in Cloud Storage (requires the Blaze plan)
-  photos: 'firestore',
+  photos: 'storage',
 
   firebase: {
     apiKey: "AIzaSyAAyGyClAYviFr0LgzdXBqna1LpPH57G-M",
