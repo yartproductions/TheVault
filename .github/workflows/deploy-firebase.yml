@@ -1,0 +1,50 @@
+# Deploys the Firebase backend (functions + database/storage rules) whenever
+# they change on main. The website itself is served by GitHub Pages.
+# Needs one repo secret: FIREBASE_SERVICE_ACCOUNT (a service-account JSON key).
+name: Deploy Firebase
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'functions/**'
+      - 'firestore.rules'
+      - 'storage.rules'
+      - 'firebase.json'
+      - '.github/workflows/deploy-firebase.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: firebase-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install and test functions
+        run: |
+          npm install --prefix functions
+          npm test --prefix functions
+
+      - name: Check the deploy key is set
+        env:
+          KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::Add the FIREBASE_SERVICE_ACCOUNT secret in GitHub → Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Deploy to Firebase
+        run: npx --yes firebase-tools@latest deploy --only functions,firestore:rules,storage --project obsidian-vault-38dfd --non-interactive
