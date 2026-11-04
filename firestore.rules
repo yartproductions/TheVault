@@ -4,7 +4,7 @@ rules_version = '2';
 // Who can do what:
 //   Vault users (owners + active members) can read records and add or edit them.
 //   Only owners can delete records, change settings or PINs, and read or clear the system log.
-//   Member accounts and Shopify order records are written only by the Firebase Functions backend.
+//   Member accounts, Shopify order records and eBay market snapshots are written only by the backend.
 //   Any collection not listed here is closed.
 //
 // The two bootstrap owner emails keep the original owners from ever being locked out.
@@ -115,6 +115,10 @@ service cloud.firestore {
 
     // ── backend-only collections ──
     match /members/{uid} {
+      allow read: if isVaultUser();
+      allow write: if false;
+    }
+    match /market/{key} {
       allow read: if isVaultUser();
       allow write: if false;
     }

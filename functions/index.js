@@ -525,3 +525,172 @@ exports.shopifyConnectOrders = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_I
   checkUserErrors(data.webhookSubscriptionCreate);
   return { connected: true, uri };
 }));
+
+// ── eBay market collector ────────────────────────────────────────
+// Every few hours: for each watched model, snapshot eBay's live fixed-price listings
+// (count and price spread), and count listings that left since the last snapshot.
+// Only numbers and listing ids are kept, never copies of other people's listings.
+const { onSchedule } = require('firebase-functions/v2/scheduler');
+const market = require('./market');
+const EBAY_CLIENT_ID = defineSecret('EBAY_CLIENT_ID');
+const EBAY_CLIENT_SECRET = defineSecret('EBAY_CLIENT_SECRET');
+const EBAY_VERIFICATION_TOKEN = defineSecret('EBAY_VERIFICATION_TOKEN');
+const EBAY_SECRETS = [EBAY_CLIENT_ID, EBAY_CLIENT_SECRET];
+const MARKET_MAX_MODELS = 60;
+const MARKET_MAX_PAGES = 5; // up to 1,000 listings per model
+const MARKET_HISTORY = 180;
+
+let ebayCachedToken = null;
+async function ebayToken() {
+  if (ebayCachedToken && ebayCachedToken.expires > Date.now() + 60e3) return ebayCachedToken.token;
+  const basic = Buffer.from(`${EBAY_CLIENT_ID.value().trim()}:${EBAY_CLIENT_SECRET.value().trim()}`).toString('base64');
+  const response = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Basic ${basic}` },
+    body: new URLSearchParams({ grant_type: 'client_credentials', scope: 'https://api.ebay.com/oauth/api_scope' })
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok || !json.access_token) {
+    const why = json.error_description || json.error || `HTTP ${response.status}`;
+    throw new HttpsError('failed-precondition', `eBay sign-in failed (${why}). Check EBAY_CLIENT_ID / EBAY_CLIENT_SECRET are your Production keys and the keyset is enabled.`);
+  }
+  ebayCachedToken = { token: json.access_token, expires: Date.now() + (Number(json.expires_in) || 7200) * 1000 };
+  return ebayCachedToken.token;
+}
+
+async function ebaySearchAll(token, query, category, group) {
+  const ids = [];
+  const prices = [];
+  let total = 0;
+  for (let page = 0; page < MARKET_MAX_PAGES; page++) {
+    const params = new URLSearchParams({ q: query, filter: market.ebayFilter(group), limit: '200', offset: String(page * 200) });
+    if (category) params.set('category_ids', category);
+    const response = await fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?${params}`, {
+      headers: { Authorization: `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' }
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const msg = (json.errors && json.errors[0] && (json.errors[0].longMessage || json.errors[0].message)) || `HTTP ${response.status}`;
+      throw new Error(`eBay search failed: ${msg}`);
+    }
+    total = Number(json.total) || 0;
+    for (const s of json.itemSummaries || []) {
+      if (s.itemId) ids.push(s.itemId);
+      const p = market.landedPrice(s);
+      if (p != null) prices.push(p);
+    }
+    if (!json.itemSummaries || json.itemSummaries.length < 200 || ids.length >= total) break;
+  }
+  return { total, ids, prices, complete: ids.length >= total };
+}
+
+// Builds the watch list from what is in stock: one model per title + storage + condition group.
+async function refreshAutoWatchlist() {
+  const items = await db.collection('items').where('status', 'in', [...market.IN_STOCK]).get();
+  const seen = new Map();
+  items.forEach(d => {
+    const it = d.data();
+    const key = market.marketKey(it.title, it.specs, it.condition);
+    if (!key) return;
+    const entry = seen.get(key) || { key, label: market.marketQuery(it.title, it.specs), query: market.marketQuery(it.title, it.specs), group: market.condGroup(it.condition), category: market.ebayCategory(it.category, it.title), codes: [] };
+    entry.codes.push(d.id);
+    seen.set(key, entry);
+  });
+  const batch = db.batch();
+  for (const e of [...seen.values()].slice(0, MARKET_MAX_MODELS)) {
+    batch.set(db.doc(`market/${e.key}`), { key: e.key, label: e.label, query: e.query, group: e.group, category: e.category, codes: e.codes.sort(), auto: true, active: true }, { merge: true });
+  }
+  await batch.commit();
+}
+
+async function collectModel(token, ref, doc) {
+  const now = new Date().toISOString();
+  try {
+    const result = await ebaySearchAll(token, doc.query, doc.category, doc.group);
+    const stats = market.priceStats(result.prices);
+    const canDiff = result.complete && doc.lastComplete && Array.isArray(doc.ids);
+    const diff = canDiff ? market.diffListings(doc.ids, result.ids) : { gone: null, added: null };
+    const point = { t: now, total: result.total, median: stats.median, p25: stats.p25, gone: diff.gone, added: diff.added };
+    const history = [...(doc.history || []), point].slice(-MARKET_HISTORY);
+    await ref.set({
+      last: { t: now, total: result.total, priced: stats.n, low: stats.low, p25: stats.p25, median: stats.median, p75: stats.p75, high: stats.high, gone: diff.gone, added: diff.added, complete: result.complete },
+      history,
+      perWeek: market.weeklyGone(history),
+      ids: result.complete ? result.ids : FieldValue.delete(),
+      lastComplete: result.complete,
+      error: ''
+    }, { merge: true });
+    return { key: doc.key, ok: true };
+  } catch (error) {
+    await ref.set({ error: String(error.message || error).slice(0, 300), errorAt: now }, { merge: true });
+    return { key: doc.key, ok: false, error: String(error.message || error) };
+  }
+}
+
+async function collectMarket(onlyKey) {
+  if (!onlyKey) await refreshAutoWatchlist();
+  const snap = onlyKey ? await db.collection('market').where('key', '==', onlyKey).get() : await db.collection('market').where('active', '==', true).get();
+  const token = await ebayToken();
+  const results = [];
+  for (const d of snap.docs.slice(0, MARKET_MAX_MODELS)) results.push(await collectModel(token, d.ref, d.data()));
+  const failed = results.filter(r => !r.ok);
+  if (failed.length) await writeSyslog('warn', 'ebayMarket', `${failed.length} of ${results.length} eBay model(s) could not be collected.`, failed.map(f => `${f.key}: ${f.error}`).join('\n'));
+  await db.doc('meta/market').set({ lastRun: new Date().toISOString(), models: results.length, failed: failed.length }, { merge: true });
+  return results;
+}
+
+exports.ebayMarketCollect = onSchedule({ schedule: 'every 6 hours', timeZone: 'America/New_York', secrets: EBAY_SECRETS, timeoutSeconds: 540, memory: '512MiB' }, async () => {
+  try { await collectMarket(); }
+  catch (error) { await logServerError('ebayMarketCollect', error, null); throw error; }
+});
+
+// "Refresh now" from the Market page, for one model or all of them.
+exports.ebayMarketRefresh = onCall({ secrets: EBAY_SECRETS, timeoutSeconds: 540, memory: '512MiB' }, logged('ebayMarketRefresh', async request => {
+  await memberFor(request);
+  const key = String(request.data && request.data.key || '').slice(0, 100);
+  if (!key) {
+    const meta = await db.doc('meta/market').get();
+    const last = meta.exists ? Date.parse(meta.data().lastRun || 0) : 0;
+    if (Date.now() - last < 10 * 60e3) throw new HttpsError('resource-exhausted', 'The market was refreshed in the last 10 minutes. Try again shortly.');
+  }
+  const results = await collectMarket(key || null);
+  return { models: results.length, failed: results.filter(r => !r.ok).length };
+}));
+
+// Add a model by hand, or stop watching one.
+exports.ebayMarketWatch = onCall({ secrets: EBAY_SECRETS, timeoutSeconds: 120 }, logged('ebayMarketWatch', async request => {
+  await memberFor(request);
+  const data = request.data || {};
+  if (data.action === 'remove') {
+    const key = String(data.key || '');
+    if (!key) throw new HttpsError('invalid-argument', 'Choose a model.');
+    await db.doc(`market/${key}`).set({ active: false }, { merge: true });
+    return { key, active: false };
+  }
+  const title = String(data.title || '').trim().slice(0, 120);
+  if (title.length < 3) throw new HttpsError('invalid-argument', 'Enter a brand and model to watch.');
+  const condition = data.condition === 'For Parts' ? 'For Parts' : 'Good';
+  const key = market.marketKey(title, data.specs || '', condition);
+  const query = market.marketQuery(title, data.specs || '');
+  const count = (await db.collection('market').where('active', '==', true).get()).size;
+  if (count >= MARKET_MAX_MODELS) throw new HttpsError('resource-exhausted', `Watching ${MARKET_MAX_MODELS} models already. Remove one first.`);
+  const ref = db.doc(`market/${key}`);
+  await ref.set({ key, label: query, query, group: market.condGroup(condition), category: market.ebayCategory(String(data.category || ''), title), auto: false, active: true, addedAt: new Date().toISOString() }, { merge: true });
+  const token = await ebayToken();
+  const snap = await ref.get();
+  const result = await collectModel(token, ref, snap.data());
+  return { key, ...result };
+}));
+
+// eBay requires production apps to accept account-deletion notices. The Vault keeps no
+// eBay user data, so it only answers eBay's endpoint check and acknowledges each notice.
+exports.ebayAccountDeletion = onRequest({ secrets: [EBAY_VERIFICATION_TOKEN], invoker: 'public' }, async (req, res) => {
+  const project = process.env.GCLOUD_PROJECT || JSON.parse(process.env.FIREBASE_CONFIG || '{}').projectId;
+  const endpoint = `https://us-east1-${project}.cloudfunctions.net/ebayAccountDeletion`;
+  if (req.method === 'GET' && req.query.challenge_code) {
+    const challengeResponse = market.ebayChallengeResponse(req.query.challenge_code, EBAY_VERIFICATION_TOKEN.value().trim(), endpoint);
+    return res.status(200).json({ challengeResponse });
+  }
+  if (req.method === 'POST') return res.status(204).send('');
+  return res.status(400).send('Bad request');
+});

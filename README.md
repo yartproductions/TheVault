@@ -75,6 +75,19 @@ With Firebase Functions deployed, Settings can switch Shopify to **Create Shopif
 - The Shopify app needs the **`read_orders`** scope for this (in addition to `write_products` and `write_inventory`). After adding it, release a new app version and approve it in the store.
 - The webhook function `shopifyOrderWebhook` must allow public access (Cloud Run → service → Security), like the other functions. It only accepts requests signed with the app's client secret. Configure the `SHOPIFY_SHOP`, `SHOPIFY_CLIENT_ID`, and `SHOPIFY_CLIENT_SECRET` Firebase secrets; never put them in `config.js` or Firestore. The Shopify app needs `write_products` and `write_inventory` access.
 
+## eBay Market
+
+The **Market** page shows, for every model in stock (plus any you add): how many are listed on eBay right now, the median price and its trend, an estimate of how many sell per week, your own past sales of that model, and a suggested price for a fast sale or for maximum profit. Each item page has a **Market check** box with one-click buttons to use those prices.
+
+How it works: every 6 hours a Firebase function takes a snapshot of eBay's live fixed-price listings for each model through eBay's Browse API. eBay doesn't share sold prices, so "sold per week" counts listings that disappear between snapshots (most sold, some just ended). Only counts, prices and listing ids are kept.
+
+Setup (once):
+1. In the eBay developer portal, use your **Production** keyset (App ID = client ID, Cert ID = client secret).
+2. eBay requires production apps to accept account-deletion notices. Under **Alerts and Notifications → Marketplace Account Deletion**, enter the endpoint `https://us-east1-obsidian-vault-38dfd.cloudfunctions.net/ebayAccountDeletion` and a verification token (32–80 letters, digits, `_` or `-`; for example from `openssl rand -hex 24`). Save, then **Send Test Notification**.
+3. Deploy. The Firebase CLI asks for `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` and `EBAY_VERIFICATION_TOKEN` (the same token as step 2) the first time.
+4. Make `ebayaccountdeletion` publicly accessible in Cloud Run (Security tab), like the other functions.
+5. Open **Market → Refresh now**.
+
 ## Database rules
 
 `firestore.rules` gives every vault account two levels:

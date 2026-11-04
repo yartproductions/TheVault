@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Obsidian Vault</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<script src="config.js?v=sales-sync-20261103"></script>
+<script src="config.js?v=market-20261103"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -252,7 +252,7 @@ const OWNER_COLORS = { o1: ['#3DDC97', '#06120D'], o2: ['#8EC3FF', '#071422'] };
 // ── state ─────────────────────────────────────────────────────────
 const S = {
   db: null, live: false, mode: 'local', fb: null, needLogin: false, login: null, assets: null, user: null, dl: null, uid: null,
-  items: {}, customers: {}, purchases: {}, sales: {}, txs: {}, activity: {}, members: {}, settings: { ...DEFAULT_SETTINGS }, loaded: {},
+  items: {}, customers: {}, purchases: {}, sales: {}, txs: {}, activity: {}, members: {}, market: {}, marketMeta: {}, settings: { ...DEFAULT_SETTINGS }, loaded: {},
   pending: 0, syncErr: null, uploads: {},
   owner: null, pins: null, pinsLoaded: false,
   lock: { who: 'o1', pin: '', err: '', fails: 0, until: 0, setup: { p1: '', c1: '', p2: '', c2: '' } },
@@ -476,6 +476,10 @@ async function boot() {
   if (S.mode === 'firebase') S.db.collection('members').limit(1000).onSnapshot(snap => {
     const m = {}; snap.docs.forEach(d => { if (d.exists) m[d.id] = d.data(); }); S.members = m; renderSoon();
   }, () => {});
+  if (S.mode === 'firebase') {
+    S.db.collection('market').limit(200).onSnapshot(snap => { const m = {}; snap.docs.forEach(d => { if (d.exists) m[d.id] = d.data(); }); S.market = m; renderSoon(); }, () => {});
+    ref('meta/market').onSnapshot(s => { S.marketMeta = s.exists ? s.data() : {}; renderSoon(); }, () => {});
+  }
   await loadPins();
   const saved = (() => { try { return sessionStorage.getItem('ov.owner'); } catch (e) { return null; } })();
   if (saved && S.pins && S.pins.o1) S.owner = saved;
@@ -645,7 +649,7 @@ function lockScreen() {
 }
 
 // ── shell ─────────────────────────────────────────────────────────
-const NAV = [['dashboard', 'Dashboard', 'dash'], ['inventory', 'Inventory Vault', 'box'], ['master', 'Master Vault', 'db'], ['customers', 'Customer Vault', 'users'], ['books', 'Bookkeeping', 'book'], ['activity', 'Activity', 'pulse'], ['settings', 'Settings', 'sliders']];
+const NAV = [['dashboard', 'Dashboard', 'dash'], ['inventory', 'Inventory Vault', 'box'], ['master', 'Master Vault', 'db'], ['market', 'Market', 'trend'], ['customers', 'Customer Vault', 'users'], ['books', 'Bookkeeping', 'book'], ['activity', 'Activity', 'pulse'], ['settings', 'Settings', 'sliders']];
 const NAV_ALIAS = { item: 'inventory', sell: 'inventory', intake: 'inventory' };
 function shell() {
   const requested = S.route.page; const p = requested === 'settings' && !isOwnerProfile(S.owner) ? 'dashboard' : requested; const on = NAV_ALIAS[p] || p; const o = S.owner; const member = !isOwnerProfile(o);
@@ -656,7 +660,7 @@ function shell() {
     <div class="who"><span class="av" style="width:36px;height:36px;background:${member ? '#13243A' : OWNER_COLORS[o][0]};color:${member ? '#8EC3FF' : OWNER_COLORS[o][1]}">${member ? esc(ownerName(o)[0].toUpperCase()) : o === 'o1' ? 1 : 2}</span><div style="flex-grow:1;min-width:0"><div style="font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis">${esc(ownerName(o))}</div><div class="sm mut2">${member ? 'Member' : 'Owner'}</div></div><button class="btn ic" style="width:36px;height:36px" data-act="lock" aria-label="Lock / switch user" title="Lock / switch user">${ic('lock', 16)}</button></div>
     <div class="sync" id="syncline"></div>
   </aside>`;
-  const PAGES = { dashboard: pDashboard, inventory: pInventory, master: pMaster, item: pItem, intake: pIntake, sell: pSell, customers: pCustomers, books: pBooks, activity: pActivity, settings: pSettings };
+  const PAGES = { dashboard: pDashboard, inventory: pInventory, master: pMaster, item: pItem, market: pMarket, intake: pIntake, sell: pSell, customers: pCustomers, books: pBooks, activity: pActivity, settings: pSettings };
   const notLive = S.backendErr ? `<div class="notice bad">${ic('warn', 18)}<div>${esc(S.backendErr)}</div></div>` : (S.mode === 'local' && (p === 'dashboard' || p === 'settings')) ? `<div class="notice">${ic('warn', 18)}<div><b>Local mode:</b> records are saved in this browser only and won’t reach other devices. Add your Firebase keys to <span class="mono">config.js</span> to sync live everywhere — see the README. Download backups regularly until then.</div></div>` : '';
   const loading = S.live && !(S.loaded.items && S.loaded.customers) ? '<div class="skel">Syncing records…</div>' : '';
   return `<div class="shell">${side}<main class="main">${notLive}${loading || (PAGES[p] || pDashboard)()}</main></div>`;
@@ -786,6 +790,7 @@ function pItem() {
       <div class="row"><span class="mut">Purchase cost</span><span class="mono cor">${money(-e.cost)}</span></div>
       <div class="glow" style="margin-top:14px;padding:16px;display:flex;justify-content:space-between;align-items:baseline"><span style="color:#9EE7BC">${e.realized ? 'Net profit' : 'Est. margin'}</span><span class="mono" style="font-size:26px;color:${e.margin >= 0 ? '#5FE6AC' : '#F2A08A'}">${money(e.margin)}</span></div>
       <div class="sm mut2" style="display:flex;justify-content:space-between;margin-top:10px"><span>ROI on cost</span><span class="mono" style="color:var(--tx2)">${e.cost ? (e.margin / e.cost * 100).toFixed(1) + '%' : '—'}</span></div></section>
+    ${marketBox(it)}
     <section class="card pad" style="display:flex;flex-direction:column;gap:14px"><h2>Status</h2>
       <ol style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px;font-size:14px">${FLOW.map((s, i) => { const idx = FLOW.indexOf(st); const done = st !== 'arch' && i < idx || st === 'sold'; const cur = s === st; return `<li style="display:flex;gap:12px;align-items:center;${!done && !cur ? 'color:#8C9C95' : ''}"><span style="width:22px;height:22px;border-radius:50%;display:grid;place-items:center;${done && !cur ? 'background:#3DDC97;color:#06120D' : cur ? 'border:2px solid #F2C063' : 'border:2px solid #2A3632'}">${done && !cur ? ic('check', 12, 3) : cur ? '<span style="width:8px;height:8px;border-radius:50%;background:#F2C063"></span>' : ''}</span>${STATUS[s][0]}</li>`; }).join('')}${st === 'arch' ? `<li style="display:flex;gap:12px;align-items:center">${chip('arch')}</li>` : ''}</ol></section>
     <section class="card pad" style="display:flex;flex-direction:column;gap:10px"><h2>History</h2>${hist.length ? hist.slice(0, 12).map(h => `<div style="display:flex;gap:10px;font-size:13px;line-height:1.45"><span class="av" style="width:22px;height:22px;font-size:10px;background:${(OWNER_COLORS[h.by] || ['#1F2725', '#9AA9A2'])[0]};color:${(OWNER_COLORS[h.by] || ['', '#06120D'])[1]}">${h.by === 'o1' ? 1 : h.by === 'o2' ? 2 : 'S'}</span><div><span style="font-weight:600">${esc(ownerName(h.by))}</span> <span class="mut">${esc(h.verb)}</span>${h.from || h.to ? ` <span class="mut2">${esc(h.from)} → ${esc(h.to)}</span>` : ''}<div class="sm mut2">${new Date(h.t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div></div></div>`).join('') : '<div class="sm mut2">No recorded actions yet.</div>'}</section>
@@ -901,6 +906,92 @@ function pIntake() {
   return `<header class="head"><div><div class="sm mut2" style="font-size:13px">Add each device, then check out once.</div><h1>New Purchase</h1></div><div class="acts">
     <div class="seg" style="padding:3px" aria-label="Purchased by">${['o1', 'o2'].map(o => `<button class="${N.by === o ? 'on' : ''}" style="height:32px" data-act="inBy" data-v="${o}">${esc(ownerName(o))}</button>`).join('')}</div></div></header>
     <div class="cols"><div class="col-main">${card}</div>${checkout}</div>`;
+}
+
+// ── MARKET (eBay snapshots + your own sales) ──────────────────────
+// market-key:start
+function marketKeyOf(it) {
+  const m = String(it.specs || '').match(/(\d+(?:\.\d+)?)\s*(GB|TB)\b/i);
+  const storage = m ? m[1] + m[2].toUpperCase() : '';
+  const base = String(it.title || '').replace(/\s+/g, ' ').trim();
+  const query = storage && !base.toUpperCase().includes(storage) ? base + ' ' + storage : base;
+  const slug = query.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
+  return slug ? slug + '--' + (it.condition === 'For Parts' ? 'parts' : 'used') : '';
+}
+// market-key:end
+const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+const daysBetween = (a, b) => { const d = (Date.parse(b) - Date.parse(a)) / 864e5; return isFinite(d) && d >= 0 ? d : null; };
+// What the Vault itself knows about a model: units in stock, and how past units sold.
+function vaultModelStats(key) {
+  const mine = itemsArr().filter(i => marketKeyOf(i) === key);
+  const sold = mine.filter(i => i.status === 'sold' && i.sale);
+  const days = sold.map(i => daysBetween(i.acquired, i.sale.date)).filter(d => d != null);
+  return {
+    inStock: mine.filter(i => STOCK.includes(i.status)).length, sold: sold.length,
+    avgDays: mean(days), avgPrice: mean(sold.map(i => num(i.sale.price))),
+    avgProfit: mean(sold.map(i => num(i.sale.price) - num(i.sale.fees) - num(i.sale.ship) - num(i.cost)))
+  };
+}
+const charm = n => n > 1 ? Math.max(0.99, Math.round(n) - 0.01) : n;
+// Suggested asking prices (what the buyer pays, shipping included).
+function suggestPrices(doc) {
+  const l = (doc && doc.last) || {};
+  if (!(l.median > 0)) return null;
+  return { fast: charm(l.p25 || l.median), max: charm(l.median) };
+}
+function medianWeekAgo(doc) {
+  const h = (doc.history || []).filter(x => x.median > 0); if (h.length < 2) return null;
+  const target = Date.now() - 7 * 864e5; let best = h[0];
+  for (const x of h) if (Math.abs(Date.parse(x.t) - target) < Math.abs(Date.parse(best.t) - target)) best = x;
+  return Date.now() - Date.parse(best.t) > 3 * 864e5 ? best.median : null;
+}
+function sparkline(doc) {
+  const pts = (doc.history || []).filter(x => x.median > 0).slice(-40); if (pts.length < 2) return '';
+  const v = pts.map(x => x.median); const lo = Math.min(...v), hi = Math.max(...v); const span = hi - lo || 1;
+  const d = v.map((y, i) => `${(i / (v.length - 1) * 96 + 2).toFixed(1)},${(26 - (y - lo) / span * 22).toFixed(1)}`).join(' ');
+  return `<svg width="100" height="28" viewBox="0 0 100 28" aria-hidden="true"><polyline points="${d}" fill="none" stroke="#3DDC97" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+}
+const agoText = t => { const m = Math.round((Date.now() - Date.parse(t)) / 60000); return !isFinite(m) ? '—' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
+function pMarket() {
+  const live = S.mode === 'firebase' && S.fb;
+  const docs = Object.values(S.market || {}).filter(d => d.active !== false);
+  docs.sort((a, b) => (b.perWeek ?? -1) - (a.perWeek ?? -1) || ((b.last || {}).total || 0) - ((a.last || {}).total || 0));
+  const M = S.ui.market || (S.ui.market = { title: '', condition: 'Good', busy: '' });
+  const meta = S.marketMeta || {};
+  const acts = live ? `<span class="sm mut2">${meta.lastRun ? 'Updated ' + agoText(meta.lastRun) + ' · every 6 h' : 'Not collected yet'}</span><button class="btn pri" data-act="mkRefresh" ${M.busy ? 'disabled' : ''}>${ic('sync', 16)}${M.busy === 'all' ? 'Refreshing…' : 'Refresh now'}</button>` : '';
+  if (!live) return head('Live eBay prices and how fast models sell', 'Market') + emptyState('The Market needs live sync (Firebase) and eBay keys. See Settings.');
+  const rows = docs.map(d => {
+    const l = d.last || {}; const v = vaultModelStats(d.key); const sp = suggestPrices(d); const prev = medianWeekAgo(d);
+    const trend = prev && l.median ? (l.median - prev) / prev * 100 : null;
+    return `<section class="card pad" style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start"><div style="min-width:0"><div style="font-weight:600;font-size:15px">${esc(d.label || d.query)}</div>
+        <div class="sm mut2" style="margin-top:3px">${d.group === 'parts' ? 'For parts' : 'Used'} · ${d.auto ? 'from your stock' : 'added by hand'}${l.t ? ' · checked ' + agoText(l.t) : ''}</div></div>
+        <div class="acts">${sparkline(d)}<button class="btn sm" data-act="mkRefresh" data-key="${esc(d.key)}" ${M.busy ? 'disabled' : ''}>${M.busy === d.key ? 'Checking…' : 'Check now'}</button>${!d.auto ? `<button class="btn sm" data-act="mkRemove" data-key="${esc(d.key)}">Stop watching</button>` : ''}</div></div>
+      ${d.error ? `<div class="notice bad"><div>${esc(d.error)}</div></div>` : ''}
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
+        ${[['On eBay now', l.total != null ? String(l.total) : '—', l.complete === false ? 'too many to track sales exactly' : ''],
+           ['Median price', l.median ? money0(l.median) : '—', trend != null ? `<span style="color:${trend >= 0 ? '#5FE6AC' : '#F2A08A'}">${trend >= 0 ? '▲' : '▼'} ${Math.abs(trend).toFixed(1)}% vs last week</span>` : (l.p25 ? `range ${money0(l.low)}–${money0(l.high)}` : '')],
+           ['Est. sold / week', d.perWeek != null ? String(d.perWeek) : '—', d.perWeek != null ? 'listings leaving eBay' : 'needs a few snapshots'],
+           ['Your stock', String(v.inStock), v.sold ? `${v.sold} sold · ${v.avgDays != null ? Math.round(v.avgDays) + ' days avg' : ''}` : 'none sold yet'],
+           ['Suggested price', sp ? `${money(sp.fast)}` : '—', sp ? `fast sale · ${money(sp.max)} for max` : '']]
+          .map(([k, val, sub]) => `<div class="card pad-s" style="background:var(--card2)"><div class="sm mut2">${k}</div><div class="mono" style="font-size:20px;margin-top:4px">${val}</div><div class="sm mut2" style="margin-top:2px">${sub}</div></div>`).join('')}
+      </div>${v.avgPrice ? `<div class="sm mut2">Your past sales: avg ${money(v.avgPrice)}${v.avgProfit != null ? ` · avg profit ${money(v.avgProfit)}` : ''}</div>` : ''}</section>`;
+  }).join('');
+  return head('Live eBay prices and how fast models sell', 'Market', acts) + `
+    <section class="card pad" style="display:flex;flex-direction:column;gap:12px"><div><h2>Watch a model</h2><div class="sm mut2" style="margin-top:4px">Models in your stock are watched automatically. Add others you're thinking of buying.</div></div>
+      <div class="acts" style="align-items:stretch"><input class="in" id="mk-title" data-bind="ui.market.title" value="${esc(M.title)}" placeholder="Brand, model and storage, e.g. Apple iPhone 15 Pro 256GB" style="flex:1 1 280px">
+        <div class="seg">${['Good', 'For Parts'].map(c => `<button class="${M.condition === c ? 'on' : ''}" data-act="mkCond" data-v="${c}">${c === 'Good' ? 'Used' : 'For parts'}</button>`).join('')}</div>
+        <button class="btn" data-act="mkAdd" ${M.busy ? 'disabled' : ''}>${ic('plus', 16, 2.2)}${M.busy === 'add' ? 'Adding…' : 'Watch'}</button></div></section>
+    <div class="notice info"><div><b>How to read this.</b> eBay doesn't share sold prices, so the Market takes a snapshot of live listings every 6 hours. <b>Est. sold / week</b> counts listings that disappear between snapshots (most sold, some just ended), and gets more accurate over a couple of weeks. Prices include shipping. <b>Fast sale</b> is just under a quarter of the market; <b>max</b> is the middle of the market.</div></div>
+    ${rows || emptyState('No models yet. Press Refresh now to build the list from your stock, or watch a model above.')}`;
+}
+function marketBox(it) {
+  if (!(S.mode === 'firebase' && S.fb) || ['sold', 'arch'].includes(it.status)) return '';
+  const key = marketKeyOf(it); const d = S.market[key]; const l = (d && d.last) || {}; const sp = suggestPrices(d); const v = vaultModelStats(key);
+  return `<section class="card pad" style="display:flex;flex-direction:column;gap:10px"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Market check</h2><a class="sm" href="#/market">Market →</a></div>
+    ${d && l.t ? `<div class="row"><span class="mut">On eBay now</span><span class="mono">${l.total ?? '—'}</span></div><div class="row"><span class="mut">Median price</span><span class="mono">${l.median ? money(l.median) : '—'}</span></div><div class="row"><span class="mut">Est. sold / week</span><span class="mono">${d.perWeek ?? '—'}</span></div>${v.avgDays != null ? `<div class="row"><span class="mut">Your avg days to sell</span><span class="mono">${Math.round(v.avgDays)}</span></div>` : ''}
+      ${sp ? `<div class="acts"><button class="btn sm pri" data-act="mkUsePrice" data-code="${esc(it.code)}" data-v="${sp.fast}">Use ${money(sp.fast)} · fast</button><button class="btn sm" data-act="mkUsePrice" data-code="${esc(it.code)}" data-v="${sp.max}">Use ${money(sp.max)} · max</button></div>` : ''}<div class="sm mut2">Checked ${agoText(l.t)} · prices include shipping</div>`
+      : d && d.error ? `<div class="notice bad"><div>${esc(d.error)}</div></div>` : `<div class="sm mut2">${d ? 'Waiting for the first eBay snapshot.' : 'Not watched on eBay yet.'}</div><button class="btn sm" data-act="mkWatchItem" data-code="${esc(it.code)}" ${S.ui.market && S.ui.market.busy ? 'disabled' : ''}>${ic('trend', 14)}Check eBay now</button>`}</section>`;
 }
 
 // ── RECORD A SALE ─────────────────────────────────────────────────
@@ -1446,6 +1537,33 @@ const ACT = {
   actType: el => { S.ui.act.type = el.dataset.v; render(); },
   actWho: el => { S.ui.act.who = el.dataset.v; render(); },
   // settings
+  mkCond: el => { (S.ui.market || (S.ui.market = { title: '', condition: 'Good', busy: '' })).condition = el.dataset.v; render(); },
+  mkRefresh: async el => {
+    const M = S.ui.market || (S.ui.market = { title: '', condition: 'Good', busy: '' }); const key = el.dataset.key || '';
+    M.busy = key || 'all'; render();
+    try { const r = await S.fb.call('ebayMarketRefresh', key ? { key } : {}); toast(r.failed ? `${r.models - r.failed} of ${r.models} models updated. See the error on the others.` : `Updated ${r.models} model${r.models === 1 ? '' : 's'} from eBay.`, r.failed ? 'err' : ''); }
+    catch (e) { toast((e && e.message) || 'Could not reach eBay.', 'err'); }
+    finally { M.busy = ''; render(); }
+  },
+  mkAdd: async () => {
+    const M = S.ui.market; if (!M.title.trim()) return toast('Enter a brand and model to watch.', 'err');
+    M.busy = 'add'; render();
+    try { await S.fb.call('ebayMarketWatch', { action: 'add', title: M.title.trim(), condition: M.condition, category: /ipad|tablet|galaxy tab/i.test(M.title) ? 'Tablet' : /macbook|laptop|thinkpad|xps/i.test(M.title) ? 'Laptop' : /playstation|xbox|switch|ps5/i.test(M.title) ? 'Console' : 'Smartphone' }); M.title = ''; toast('Watching it now.'); }
+    catch (e) { toast((e && e.message) || 'Could not add that model.', 'err'); }
+    finally { M.busy = ''; render(); }
+  },
+  mkRemove: async el => { try { await S.fb.call('ebayMarketWatch', { action: 'remove', key: el.dataset.key }); toast('Stopped watching.'); } catch (e) { toast((e && e.message) || 'Could not remove it.', 'err'); } },
+  mkWatchItem: async el => {
+    const it = S.items[el.dataset.code]; const M = S.ui.market || (S.ui.market = { title: '', condition: 'Good', busy: '' });
+    M.busy = 'item'; render();
+    try { await S.fb.call('ebayMarketWatch', { action: 'add', title: it.title, specs: it.specs || '', condition: it.condition, category: it.category }); toast('eBay checked.'); }
+    catch (e) { toast((e && e.message) || 'Could not reach eBay.', 'err'); }
+    finally { M.busy = ''; render(); }
+  },
+  mkUsePrice: async el => {
+    const it = S.items[el.dataset.code]; const v = +el.dataset.v;
+    try { await write(() => ref('items/' + it.code).update({ packet: { price: v }, updatedAt: nowISO(), updatedBy: S.owner }), it.code); logAct('LT', 'set listing price from the Market for', it.code, it.title, money(v)); toast(`Listing price set to ${money(v)}.`); } catch (e) {}
+  },
   shConnectOrders: async el => {
     if (!ShopifyAdapter.configured()) return toast('Switch Shopify to Create Shopify drafts first.', 'err');
     if (!isAccountOwner()) return toast('Only an owner account can connect Shopify orders.', 'err');

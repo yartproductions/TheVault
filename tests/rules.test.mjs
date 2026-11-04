@@ -23,6 +23,7 @@ await env.withSecurityRulesDisabled(async ctx => {
   await setDoc(doc(db, 'meta/security'), { pins: { o1: 'hash' } });
   await setDoc(doc(db, 'syslog/0001'), { t: 'x', level: 'error', source: 'app', msg: 'boom' });
   await setDoc(doc(db, 'shopifyOrders/1'), { name: '#1001' });
+  await setDoc(doc(db, 'market/apple-iphone-14-pro-128gb--used'), { key: 'apple-iphone-14-pro-128gb--used', active: true });
 });
 
 const as = (uid, email) => env.authenticatedContext(uid, { email }).firestore();
@@ -66,6 +67,8 @@ await ok('member reads PIN hashes (needed for the lock screen)', getDoc(doc(memb
 await ok('member adds and removes a photo', setDoc(doc(member, 'photos/fs-1'), { data: 'x' }).then(() => deleteDoc(doc(member, 'photos/fs-1'))));
 await ok('member reports an error to the system log', setDoc(doc(member, 'syslog/0002'), logEntry));
 await ok('member reads the member list', getDocs(collection(member, 'members')));
+await ok('member reads eBay market snapshots', getDocs(collection(member, 'market')));
+await no('stranger cannot read market snapshots', getDocs(collection(stranger, 'market')));
 
 // Members cannot destroy or take over.
 await no('member cannot delete an item', deleteDoc(doc(member, 'items/VR-00001')));
@@ -82,6 +85,8 @@ await no('member cannot clear the system log', deleteDoc(doc(member, 'syslog/000
 await no('member cannot edit a log entry', updateDoc(doc(member, 'syslog/0001'), { msg: 'hidden' }));
 await no('member cannot write junk to the log', setDoc(doc(member, 'syslog/0003'), { ...logEntry, extra: 1 }));
 await no('member cannot make themselves an owner', updateDoc(doc(member, 'members/mem1'), { role: 'owner' }));
+await no('member cannot write market snapshots', setDoc(doc(member, 'market/x'), { active: true }));
+await no('owner cannot write market snapshots directly', setDoc(doc(bootstrap, 'market/x'), { active: true }));
 await no('member cannot read Shopify orders', getDocs(collection(member, 'shopifyOrders')));
 await no('member cannot use an unlisted collection', setDoc(doc(member, 'secrets/x'), { a: 1 }));
 
