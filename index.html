@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Obsidian Vault</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<script src="config.js?v=market-detail-20261104"></script>
+<script src="config.js?v=shopify-publish-20261104"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -813,6 +813,7 @@ function packetCard(it, pk, photos, up, sh) {
   return `<section class="card pad" style="display:flex;flex-direction:column;gap:18px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><h2>Shopify listing packet ${pk.code ? codeChip(pk.code) : ''}</h2><div class="sm mut2" style="margin-top:4px">JPEG, PNG or WebP · up to 12 photos · large photos are resized automatically</div></div>
       <span style="font-size:11px;font-weight:600;letter-spacing:1.4px;color:${live ? '#06120D' : pk.shopifyId ? '#5FE6AC' : '#F2C063'};padding:5px 10px;border-radius:6px;background:${live ? '#3DDC97' : pk.shopifyId ? '#0F2A1F' : '#2B2312'}">${soldOut ? 'SOLD OUT' : live ? 'ACTIVE ON SHOPIFY' : pk.shopifyId ? 'SHOPIFY DRAFT' : 'NOT ON SHOPIFY'}</span></div>
+    ${live && pk.shopifyPublishError ? `<div class="notice bad"><div><b>Active on Shopify but not visible to buyers.</b> ${esc(pk.shopifyPublishError)} After fixing it, press Update Shopify listing.</div></div>` : live && (pk.shopifyChannels || []).length ? `<div class="sm mut2">Visible on: ${pk.shopifyChannels.map(esc).join(', ')}</div>` : ''}
     ${parent ? `<div class="notice info"><div>This unit is included in the Shopify listing for <a href="#/item/${encodeURIComponent(it.listedIn)}">${esc(it.listedIn)}</a>. Manage photos, quantity and Shopify from that record.</div></div>` : ''}
     <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px">${tiles}${busy}${drop}</div>
     <div class="grid g4" style="gap:14px">${fIn(it, 'packet.title', 'Listing title', { cls: 'span3', icon: 'tag', ph: it.title })}${fIn(it, 'packet.price', 'Price', { money: 1, icon: 'cash', ph: it.resale })}
@@ -1617,7 +1618,8 @@ const ACT = {
     try {
       const res = await ShopifyAdapter.activate(it.code);
       logAct('LT', 'activated the Shopify listing for', pk.code || it.code, it.title, `Quantity ${res.quantity}`, res.units || [it.code], STATUS[it.status] ? STATUS[it.status][0] : it.status, 'Listed');
-      toast(`Live on Shopify — ${res.quantity} unit${res.quantity > 1 ? 's' : ''} listed.`);
+      if (res.publishError) toast(`Active on Shopify, but not visible in your store yet: ${res.publishError}`, 'err');
+      else toast(`Live on Shopify${res.channels && res.channels.length ? ' (' + res.channels.join(', ') + ')' : ''} — ${res.quantity} unit${res.quantity > 1 ? 's' : ''} listed.`);
     } catch (e) { el.disabled = false; toast((e && e.message) || 'Shopify could not activate the listing. Nothing changed in the Vault.', 'err'); }
   },
   pkQty: async el => {

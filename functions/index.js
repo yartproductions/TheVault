@@ -291,9 +291,12 @@ exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, S
   let product;
   if (packet.shopifyId) {
     productInput.id = packet.shopifyId;
+    // Only photos that weren't sent before, so updates don't duplicate media.
+    const sent = new Set(packet.shopifyMediaSent || []);
+    const newMedia = media.filter(m => !sent.has(m.originalSource));
     const data = await shopifyGraphql(connection,
-      `mutation UpdateProduct($product: ProductUpdateInput!) { productUpdate(product: $product) { product { id handle status variants(first: 1) { nodes { id inventoryItem { id } } } } userErrors { field message } } }`,
-      { product: productInput });
+      `mutation UpdateProduct($product: ProductUpdateInput!, $media: [CreateMediaInput!]) { productUpdate(product: $product, media: $media) { product { id handle status variants(first: 1) { nodes { id inventoryItem { id } } } } userErrors { field message } } }`,
+      { product: productInput, media: newMedia.length ? newMedia : null });
     product = checkUserErrors(data.productUpdate).product;
   } else {
     productInput.status = 'DRAFT';
@@ -306,19 +309,41 @@ exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, S
   const variant = product.variants.nodes[0];
   const variantData = await shopifyGraphql(connection,
     `mutation UpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) { productVariantsBulkUpdate(productId: $productId, variants: $variants) { productVariants { id inventoryItem { id sku tracked } } userErrors { field message } } }`,
-    { productId: product.id, variants: [{ id: variant.id, price: price.toFixed(2), inventoryPolicy: 'DENY', inventoryItem: { sku, tracked: true, requiresShipping: true } }] });
+    { productId: product.id, variants: [{ id: variant.id, price: price.toFixed(2), inventoryPolicy: 'DENY', inventoryItem: { sku, tracked: true, requiresShipping: true, ...(Number(item.cost) > 0 ? { cost: Number(item.cost).toFixed(2) } : {}) } }] });
   checkUserErrors(variantData.productVariantsBulkUpdate);
 
   // Shopify's quantity always matches the number of Vault units in this listing.
   await setAvailable(connection, variant.inventoryItem.id, quantity);
 
+  // An already-active listing is (re)published, so fixing app permissions and pressing Update makes it visible.
+  let publish = {};
+  if (product.status === 'ACTIVE') {
+    try { publish = { shopifyChannels: await publishToChannels(connection, product.id), shopifyPublishError: '' }; }
+    catch (error) { publish = { shopifyPublishError: /access|scope|denied|permission/i.test(String(error.message)) ? 'The Shopify app needs the read_publications and write_publications scopes to put products on your Online Store.' : String(error.message || error) }; }
+  }
+
   const adminUrl = `https://admin.shopify.com/store/${connection.shop}/products/${product.id.split('/').pop()}`;
   const batch = db.batch();
-  batch.set(itemRef, { packet: { shopifyId: product.id, shopifyUrl: adminUrl, shopifySku: sku, shopifyStatus: product.status || 'DRAFT', shopifyQty: quantity, shopifyInventoryItemId: variant.inventoryItem.id, units, shopifySyncedAt: FieldValue.serverTimestamp() } }, { merge: true });
+  batch.set(itemRef, { packet: { shopifyId: product.id, shopifyUrl: adminUrl, shopifySku: sku, shopifyStatus: product.status || 'DRAFT', shopifyQty: quantity, shopifyInventoryItemId: variant.inventoryItem.id, units, shopifyMediaSent: media.map(m => m.originalSource), ...publish, shopifySyncedAt: FieldValue.serverTimestamp() } }, { merge: true });
   units.filter(code => code !== sku).forEach(code => batch.set(db.doc(`items/${code}`), { listedIn: sku }, { merge: true }));
   await batch.commit();
   return { id: product.id, adminUrl, sku, status: product.status || 'DRAFT', quantity, units };
 }));
+
+// Puts a product on the store's sales channels (Online Store and Shop). Products created through
+// the API start unpublished, so an Active product isn't visible to buyers until this runs.
+// Needs the read_publications and write_publications scopes on the Shopify app.
+const SALES_CHANNELS = /online store|^shop$|for shop$/i;
+async function publishToChannels(connection, productId) {
+  const data = await shopifyGraphql(connection, `query Channels { publications(first: 25) { nodes { id catalog { title } } } }`);
+  const targets = data.publications.nodes.filter(p => SALES_CHANNELS.test(String((p.catalog && p.catalog.title) || '').replace(/^channel catalog \d+ for /i, '').trim()));
+  if (!targets.length) return [];
+  const result = await shopifyGraphql(connection,
+    `mutation Publish($id: ID!, $input: [PublicationInput!]!) { publishablePublish(id: $id, input: $input) { userErrors { field message } } }`,
+    { id: productId, input: targets.map(t => ({ publicationId: t.id })) });
+  checkUserErrors(result.publishablePublish);
+  return targets.map(t => String(t.catalog.title).replace(/^channel catalog \d+ for /i, ''));
+}
 
 exports.shopifyActivate = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET], timeoutSeconds: 60 }, logged('shopifyActivate', async request => {
   await memberFor(request);
@@ -338,14 +363,21 @@ exports.shopifyActivate = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SH
     `mutation ActivateProduct($product: ProductUpdateInput!) { productUpdate(product: $product) { product { id status } userErrors { field message } } }`,
     { product: { id: packet.shopifyId, status: 'ACTIVE' } });
   const product = checkUserErrors(data.productUpdate).product;
+  let channels = [];
+  let publishError = '';
+  try { channels = await publishToChannels(connection, product.id); }
+  catch (error) {
+    publishError = /access|scope|denied|permission/i.test(String(error.message)) ? 'The Shopify app needs the read_publications and write_publications scopes to put products on your Online Store.' : String(error.message || error);
+    await writeSyslog('warn', 'shopifyActivate', `Product is Active but not published to sales channels: ${publishError}`, product.id);
+  }
 
   // Only after Shopify confirms do the in-stock units move to Listed.
   const now = new Date().toISOString();
   const batch = db.batch();
-  batch.set(itemRef, { packet: { shopifyStatus: product.status, shopifyQty: inStock.length, units, shopifyActivatedAt: FieldValue.serverTimestamp() } }, { merge: true });
+  batch.set(itemRef, { packet: { shopifyStatus: product.status, shopifyQty: inStock.length, units, shopifyChannels: channels, shopifyPublishError: publishError, shopifyActivatedAt: FieldValue.serverTimestamp() } }, { merge: true });
   inStock.forEach(code => batch.set(db.doc(`items/${code}`), code === sku ? { status: 'list', updatedAt: now } : { status: 'list', updatedAt: now, listedIn: sku }, { merge: true }));
   await batch.commit();
-  return { id: product.id, status: product.status, quantity: inStock.length, units: inStock };
+  return { id: product.id, status: product.status, quantity: inStock.length, units: inStock, channels, publishError };
 }));
 
 // ── Sales sync ───────────────────────────────────────────────────

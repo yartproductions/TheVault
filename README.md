@@ -65,14 +65,14 @@ With Firebase Functions deployed, Settings can switch Shopify to **Create Shopif
 
 1. **Quantity in this listing:** use − / ＋ in the packet to pull in other in-stock units from the same purchase with the same title. Those units link to this listing and can't be listed separately.
 2. **Create Shopify draft:** creates an unpublished product (SKU = the Vault code, e.g. `VR-00001`), sets Shopify's quantity to the number of units, and opens the product in a new tab.
-3. **Activate Shopify listing:** switches the Shopify product from Draft to Active and, once Shopify confirms, moves every unit in the listing to **Listed** in the Vault.
+3. **Activate Shopify listing:** switches the Shopify product from Draft to Active, publishes it to the Online Store and Shop channels, and once Shopify confirms, moves every unit in the listing to **Listed** in the Vault. The packet shows where it's visible, or why it isn't.
 
 **Update Shopify draft / listing** re-syncs title, price, photos and quantity at any time.
 
 ### Sales sync
 - **Vault → Shopify:** recording a sale or a return in the Vault resets Shopify's quantity to the units still in stock. At zero the product goes back to Draft so it leaves the store.
 - **Shopify → Vault:** press **Settings → Shopify → Connect Shopify orders** once. Every paid Shopify order then marks the sold units **Sold**, books each sale (price after discounts, Shopify fee 2.9% + $0.30, your flat shipping) with its bookkeeping entry, and logs it in Activity. Each order is recorded exactly once, even if Shopify sends it twice. Lines without a Vault SKU, or with more quantity than is in stock, show up in Settings → System log.
-- The Shopify app needs the **`read_orders`** scope for this (in addition to `write_products` and `write_inventory`). After adding it, release a new app version and approve it in the store.
+- The Shopify app needs these scopes: `write_products`, `write_inventory`, `read_orders` (order sync) and `read_publications` + `write_publications` (so **Activate** can put the product on the Online Store and Shop channels; API-created products otherwise stay invisible). After changing scopes, release a new app version and approve it in the store.
 - The webhook function `shopifyOrderWebhook` must allow public access (Cloud Run → service → Security), like the other functions. It only accepts requests signed with the app's client secret. Configure the `SHOPIFY_SHOP`, `SHOPIFY_CLIENT_ID`, and `SHOPIFY_CLIENT_SECRET` Firebase secrets; never put them in `config.js` or Firestore. The Shopify app needs `write_products` and `write_inventory` access.
 
 ## eBay Market
