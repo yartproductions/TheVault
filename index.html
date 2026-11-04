@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Obsidian Vault</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<script src="config.js?v=listing-gen-20261104"></script>
+<script src="config.js?v=listing-cache-20261104"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -822,7 +822,7 @@ function generatedPanel(it, pk) {
   const list = (items, color) => items.map(x => `<li style="color:${color}">${esc(x)}</li>`).join('');
   const gradeColor = g.grade === 'For Parts' ? '#F2A08A' : g.grade === 'Used – Fair' ? '#F2C063' : '#5FE6AC';
   return `<div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:12px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><b>Shopify listing preview</b> <span class="sm mut2">· ${esc(g.type)} · written ${agoText(g.at)}${g.searches ? ` · ${g.searches} web lookup${g.searches === 1 ? '' : 's'}` : ''}</span></div>${btn}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><b>Shopify listing preview</b> <span class="sm mut2">· ${esc(g.type)} · written ${agoText(g.at)}${g.searches ? ` · ${g.searches} web lookup${g.searches === 1 ? '' : 's'}` : ''}${g.cost != null ? ` · ≈ $${(+g.cost).toFixed(3)}${g.usage && g.usage.cache_read_input_tokens ? ' (rulebook cached)' : ''}` : ''}</span></div>${btn}</div>
     ${stale ? '<div class="notice"><div>The notes or details changed since this was written. Regenerate to update it (it also updates automatically when you push to Shopify).</div></div>' : ''}
     <div><div class="sm mut2">Title · ${g.title.length}/80</div><div style="font-size:16px;font-weight:600;margin-top:2px">${esc(g.title)}</div></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;font-weight:700;padding:4px 9px;border-radius:7px;background:#111615;border:1px solid ${gradeColor};color:${gradeColor}">${esc(g.grade)}</span><span class="sm mut">${esc(g.conditionText)}</span></div>
@@ -856,7 +856,7 @@ function packetCard(it, pk, photos, up, sh) {
     <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px">${tiles}${busy}${drop}</div>
     <div class="grid g4" style="gap:14px">${fIn(it, 'packet.title', 'Working title <span class="opt">optional — the final title is generated</span>', { cls: 'span3', icon: 'tag', ph: it.title })}${fIn(it, 'packet.price', 'Price', { money: 1, icon: 'cash', ph: it.resale })}
       <div class="fld spanall"><label for="if-packet-description"><span class="li">${ic('book', 14, 1.9)}</span>Lister notes <span class="opt">plain English — not the final description</span></label><textarea class="ta" id="if-packet-description" data-ifield="packet.description" data-code="${esc(it.code)}" rows="4" placeholder="${esc(NOTES_PLACEHOLDER[it.category] || NOTES_PLACEHOLDER.default)}">${esc(ival(it, 'packet.description') || '')}</textarea><span class="sm mut2">Write what you see and tested, like you'd tell a coworker. The Shopify title, description and specs are written from this with the SYG listing rulebook.</span></div>
-      ${fIn(it, 'packet.included', 'Included', { cls: 'span2', icon: 'box', ph: 'e.g. No charger · or w/ Charger & Case' })}${fSel(it, 'packet.returnPolicy', 'Return policy', RETURN_POLICIES, { cls: 'span2', icon: 'sync' })}</div>
+      ${fIn(it, 'packet.included', 'Included <span class="opt">separate with commas — shown as bullet points</span>', { cls: 'span2', icon: 'box', ph: 'e.g. Console, 1 controller, HDMI cable, power cable' })}${fSel(it, 'packet.returnPolicy', 'Return policy', RETURN_POLICIES, { cls: 'span2', icon: 'sync' })}</div>
     ${generatedPanel(it, pk)}
     ${qtyRow}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:16px">

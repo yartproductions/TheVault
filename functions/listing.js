@@ -87,7 +87,7 @@ const OUTPUT_SPEC = `Return ONE JSON object inside <listing_json></listing_json>
   "grade": one of ${JSON.stringify(GRADES)},
   "condition_text": "the full condition sentence(s) per the grading rules",
   "rows": [{"label": "Brand", "value": "..."}, ...]   // spec rows only — no Condition, Included, Shipping or Returns rows
-  "included": "what's included, e.g. 'Device only; no charger' or 'Console, 1 controller, HDMI cable, power cable'",
+  "included": "what's included as a comma-separated list, e.g. 'Console, 1 controller, HDMI cable, power cable' or 'Device only, no charger'",
   "metafields": {"brand": "...", ...},                 // only the allowed keys relevant to the type
   "missing": ["per-unit details the lister should add, e.g. 'Battery health %'"],
   "filled_from_knowledge": [{"field": "Model Number", "value": "A2650"}],
@@ -209,6 +209,22 @@ function ebayReadiness(type, grade, conditionText, returnPolicy) {
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// "Charger (65W, USB-C), case; 2 controllers" → ["Charger (65W, USB-C)", "Case", "2 controllers"].
+// Splits on commas, semicolons, new lines and bullets, but never inside parentheses.
+function splitIncluded(text) {
+  const parts = [];
+  let depth = 0;
+  let cur = '';
+  for (const ch of String(text || '')) {
+    if (ch === '(' || ch === '[') depth++;
+    if ((ch === ')' || ch === ']') && depth) depth--;
+    if (!depth && /[,;\n•·]/.test(ch)) { parts.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  parts.push(cur);
+  return parts.map(p => p.replace(/^\s*(?:and\s+|-\s*|\*\s*)/i, '').trim()).filter(Boolean).map(p => p.charAt(0).toUpperCase() + p.slice(1));
+}
+
 // The eBay-safe HTML template: one table, navy section bars, alternating rows, inline hex CSS only,
 // no scripts or links, fixed Shipping & Returns rows at the end.
 function renderHtml(listing, opts = {}) {
@@ -216,13 +232,25 @@ function renderHtml(listing, opts = {}) {
   if (opts.standardWear && /^Used/.test(listing.grade) && !condition.includes(STANDARD_WEAR)) condition = `${condition} ${STANDARD_WEAR}`;
   const rows = [...listing.rows];
   rows.push({ label: 'Condition', value: condition });
-  if (listing.included) rows.push({ label: 'Included', value: listing.included });
+  if (listing.included) rows.push({ label: 'Included', list: splitIncluded(listing.included) });
   const header = text => `<tr><th colspan="2" style="background-color:#1F4E79;color:#ffffff;font-weight:bold;text-align:left;padding:8px;">${esc(text)}</th></tr>`;
-  const row = (r, i) => `<tr style="background-color:${i % 2 ? '#f9f9f9' : '#ffffff'};"><td style="padding:8px;border:1px solid #dddddd;font-weight:bold;width:35%;">${esc(r.label)}</td><td style="padding:8px;border:1px solid #dddddd;">${esc(r.value)}</td></tr>`;
+  const cell = r => r.list ? (r.list.length > 1 ? `<ul style="margin:0;padding-left:18px;">${r.list.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : esc(r.list[0] || '')) : esc(r.value);
+  const row = (r, i) => `<tr style="background-color:${i % 2 ? '#f9f9f9' : '#ffffff'};"><td style="padding:8px;border:1px solid #dddddd;font-weight:bold;width:35%;">${esc(r.label)}</td><td style="padding:8px;border:1px solid #dddddd;">${cell(r)}</td></tr>`;
   return `<div style="font-family:Arial,sans-serif;max-width:800px;"><table style="width:100%;border-collapse:collapse;font-size:14px;color:#333333;"><tbody>`
     + header('Product Details') + rows.map(row).join('')
     + header('Shipping & Returns') + row({ label: 'Shipping', value: 'Free Shipping' }, 0) + row({ label: 'Return Policy', value: listing.returnPolicy }, 1)
     + `</tbody></table></div>`;
 }
 
-module.exports = { RULEBOOK, TYPES, METAFIELD_KEYS, GRADES, RETURN_POLICIES, STANDARD_WEAR, listingInputs, inputsHash, buildPrompt, extractJson, fixTitle, normalizeListing, ebayReadiness, renderHtml };
+// Rough cost of one generation in USD (Sonnet 5.5: $2/M input, $10/M output; cache writes 2× for the
+// 1-hour cache, cache reads $0.20/M; web search $10 per 1,000).
+const PRICES = { input: 2, output: 10, cacheWrite1h: 4, cacheWrite5m: 2.5, cacheRead: 0.2, search: 0.01 };
+function estimateCost(usage, searches, ttl) {
+  const u = usage || {};
+  const write = ttl === '5m' ? PRICES.cacheWrite5m : PRICES.cacheWrite1h;
+  const usd = ((u.input_tokens || 0) * PRICES.input + (u.output_tokens || 0) * PRICES.output
+    + (u.cache_creation_input_tokens || 0) * write + (u.cache_read_input_tokens || 0) * PRICES.cacheRead) / 1e6 + (searches || 0) * PRICES.search;
+  return +usd.toFixed(4);
+}
+
+module.exports = { RULEBOOK, TYPES, METAFIELD_KEYS, GRADES, RETURN_POLICIES, STANDARD_WEAR, listingInputs, inputsHash, buildPrompt, extractJson, fixTitle, normalizeListing, ebayReadiness, renderHtml, splitIncluded, estimateCost, PRICES };

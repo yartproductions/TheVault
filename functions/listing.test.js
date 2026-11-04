@@ -52,3 +52,17 @@ test('JSON is extracted from the tagged reply', () => {
   assert.deepEqual(L.extractJson('thinking… <listing_json>{"a":1}</listing_json>'), { a: 1 });
   assert.throws(() => L.extractJson('no json here'));
 });
+
+test('included items become bullet points, commas inside parentheses stay together', () => {
+  assert.deepEqual(L.splitIncluded('Charger (65W, USB-C), case; 2 controllers\n• HDMI cable'), ['Charger (65W, USB-C)', 'Case', '2 controllers', 'HDMI cable']);
+  assert.deepEqual(L.splitIncluded('Memory modules only'), ['Memory modules only']);
+  const g = L.normalizeListing({ type: 'Console', title: 't', grade: 'Used – Good', condition_text: 'ok', rows: [], included: 'Console, 1 controller, HDMI cable, power cable' }, L.listingInputs({ code: 'VR-00001', title: 'PS5', condition: 'Good' }, {}));
+  const html = L.renderHtml(g);
+  assert.match(html, /<ul style="margin:0;padding-left:18px;"><li>Console<\/li><li>1 controller<\/li><li>HDMI cable<\/li><li>Power cable<\/li><\/ul>/);
+  const one = L.renderHtml({ ...g, included: 'Device only' });
+  assert.doesNotMatch(one, /<ul/);
+});
+
+test('cost estimate', () => {
+  assert.equal(L.estimateCost({ input_tokens: 200, output_tokens: 1000, cache_read_input_tokens: 2000 }, 2), 0.0308);
+});

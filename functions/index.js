@@ -280,22 +280,30 @@ async function anthropic(body) {
 // rulebook's research rules ask; if search isn't available on the account it runs without.
 async function claudeListing(inputs) {
   const { system, user } = listing.buildPrompt(inputs);
-  const base = { model: LISTING_MODEL, max_tokens: 4000, system };
+  // The rulebook prompt is identical for every listing, so it's cached: later listings read it
+  // at a tenth of the price. 1-hour cache for listing sessions; falls back to the 5-minute one.
+  let ttl = '1h';
+  const systemBlocks = () => [{ type: 'text', text: system, cache_control: ttl === '1h' ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' } }];
   let messages = [{ role: 'user', content: user }];
   let tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 }];
+  const usage = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+  let searches = 0;
   let reply;
-  for (let turn = 0; turn < 4; turn++) {
-    try { reply = await anthropic({ ...base, messages, ...(tools ? { tools } : {}) }); }
+  for (let turn = 0; turn < 6; turn++) {
+    try { reply = await anthropic({ model: LISTING_MODEL, max_tokens: 4000, system: systemBlocks(), messages, ...(tools ? { tools } : {}) }); }
     catch (error) {
-      if (tools && error.status === 400 && /tool|web_search/i.test(error.message)) { tools = null; turn--; continue; }
+      if (error.status === 400 && ttl === '1h' && /ttl|cache/i.test(error.message)) { ttl = '5m'; continue; }
+      if (error.status === 400 && tools && /tool|web_search/i.test(error.message)) { tools = null; continue; }
       throw error;
     }
+    const u = reply.usage || {};
+    for (const k of Object.keys(usage)) usage[k] += Number(u[k]) || 0;
+    searches += (u.server_tool_use && u.server_tool_use.web_search_requests) || 0;
     if (reply.stop_reason !== 'pause_turn') break;
     messages = [...messages, { role: 'assistant', content: reply.content }];
   }
   const text = (reply.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
-  const searches = (reply.usage && reply.usage.server_tool_use && reply.usage.server_tool_use.web_search_requests) || 0;
-  return { out: listing.extractJson(text), searches };
+  return { out: listing.extractJson(text), searches, usage, cost: listing.estimateCost(usage, searches, ttl), ttl };
 }
 
 async function generateListing(itemRef, item) {
@@ -304,7 +312,7 @@ async function generateListing(itemRef, item) {
   const hash = listing.inputsHash(inputs);
   const settingsSnap = await db.doc('meta/settings').get();
   const standardWear = ((settingsSnap.exists && settingsSnap.data().shopify) || {}).standardWear !== false;
-  const { out, searches } = await claudeListing(inputs);
+  const { out, searches, usage, cost } = await claudeListing(inputs);
   const result = listing.normalizeListing(out, inputs);
   const generated = {
     ...result,
@@ -313,6 +321,8 @@ async function generateListing(itemRef, item) {
     inputs,
     model: LISTING_MODEL,
     searches,
+    usage,
+    cost,
     at: new Date().toISOString()
   };
   await itemRef.set({ packet: { generated } }, { merge: true });
