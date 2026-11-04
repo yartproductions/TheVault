@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
+const { getStorage } = require('firebase-admin/storage');
 const { FieldValue, getFirestore } = require('firebase-admin/firestore');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const { HttpsError, onCall, onRequest } = require('firebase-functions/v2/https');
@@ -8,6 +9,7 @@ const { defineSecret } = require('firebase-functions/params');
 const { vaultSku, listingUnits } = require('./sku');
 const orders = require('./orders');
 const listing = require('./listing');
+const photos = require('./photos');
 
 initializeApp();
 setGlobalOptions({ region: 'us-east1', maxInstances: 5 });
@@ -382,7 +384,7 @@ exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, S
     tags: ['obsidian-vault', sku, gen.type, gen.grade].filter(Boolean),
     metafields: [{ namespace: 'custom', key: 'vault_record', type: 'single_line_text_field', value: sku }, ...generatedMetafields(gen)]
   };
-  const media = (packet.photos || []).filter(url => /^https:\/\//i.test(url)).slice(0, 12).map((url, index) => ({
+  const media = (packet.photos || []).filter(url => /^https:\/\//i.test(url) && !photos.isShopifyCdn(url)).slice(0, 12).map((url, index) => ({
     originalSource: url,
     alt: `${(packet.generated && packet.generated.title) || title} photo ${index + 1}`,
     mediaContentType: 'IMAGE'
@@ -926,3 +928,95 @@ exports.ebayAccountDeletion = onRequest({ secrets: [EBAY_VERIFICATION_TOKEN], in
   if (req.method === 'POST') return res.status(204).send('');
   return res.status(400).send('Bad request');
 });
+
+
+// ── Photo cleanup (1st and 15th of each month) ────────────────────
+// Frees Firebase Storage without losing photos. See functions/photos.js for the rules.
+async function runPhotoCleanup({ dryRun }) {
+  const now = Date.now();
+  const settingsSnap = await db.doc('meta/settings').get();
+  const cfg = ((settingsSnap.exists && settingsSnap.data().photoCleanup) || {});
+  const soldDays = Number(cfg.soldDays) || 30;
+  const bucket = getStorage().bucket();
+  const report = { at: new Date(now).toISOString(), dryRun: !!dryRun, soldDays, swapped: [], deleted: [], orphans: 0, files: 0, bytes: 0, skipped: [], errors: [] };
+
+  const itemsSnap = await db.collection('items').get();
+  const referenced = new Set();
+  const plans = [];
+  itemsSnap.forEach(d => {
+    const item = d.data();
+    for (const u of ((item.packet || {}).photos || [])) { const p = photos.storagePath(u); if (p) referenced.add(p); }
+    const plan = photos.planItem(item, now, { soldDays });
+    if (plan.action !== 'keep') plans.push({ code: d.id, ref: d.ref, item, plan });
+  });
+
+  const fileSize = async path => { try { const [m] = await bucket.file(path).getMetadata(); return Number(m.size) || 0; } catch (e) { return 0; } };
+  const removeFiles = async urls => {
+    for (const u of urls) {
+      const path = photos.storagePath(u); if (!path) continue;
+      report.files++; report.bytes += await fileSize(path);
+      if (!dryRun) await bucket.file(path).delete({ ignoreNotFound: true });
+    }
+  };
+
+  // Items whose photos are on Shopify: confirm Shopify's copies are READY, switch to them, then delete ours.
+  const swaps = plans.filter(p => p.plan.action === 'swap');
+  let connection = null;
+  if (swaps.length) { try { connection = await shopifyToken(); } catch (e) { report.errors.push(`Shopify: ${e.message}`); } }
+  for (const { code, ref, item, plan } of swaps) {
+    if (!connection) { report.skipped.push(`${code}: Shopify unavailable`); continue; }
+    try {
+      const data = await shopifyGraphql(connection, `query Media($id: ID!) { product(id: $id) { media(first: 50) { nodes { ... on MediaImage { status image { url } } } } } }`, { id: plan.shopifyId });
+      const copies = data.product ? photos.shopifyCopies(data.product.media.nodes, plan.photos.length) : null;
+      if (!copies) { report.skipped.push(`${code}: Shopify copies not ready`); continue; }
+      const keep = ((item.packet || {}).photos || []).filter(u => !photos.isFirebasePhoto(u) && !copies.includes(u));
+      const next = [...copies, ...keep].slice(0, 12);
+      if (!dryRun) await ref.set({ packet: { photos: next, shopifyMediaSent: FieldValue.arrayUnion(...copies), photosOnShopifyAt: report.at } }, { merge: true });
+      await removeFiles(plan.photos);
+      report.swapped.push(code);
+    } catch (e) { report.errors.push(`${code}: ${e.message}`); }
+  }
+
+  // Sold / archived long enough, not on Shopify.
+  for (const { code, ref, item, plan } of plans.filter(p => p.plan.action === 'delete')) {
+    try {
+      const rest = ((item.packet || {}).photos || []).filter(u => !photos.isFirebasePhoto(u));
+      if (!dryRun) await ref.set({ packet: { photos: rest, photosPurged: plan.photos.length, photosPurgedAt: report.at } }, { merge: true });
+      await removeFiles(plan.photos);
+      report.deleted.push(code);
+    } catch (e) { report.errors.push(`${code}: ${e.message}`); }
+  }
+
+  // Files nothing points to.
+  try {
+    const [files] = await bucket.getFiles({ prefix: 'photos/' });
+    const orphans = photos.orphanFiles(files.map(f => ({ name: f.name, created: f.metadata.timeCreated, size: Number(f.metadata.size) || 0 })), referenced, now);
+    for (const f of orphans) { report.files++; report.bytes += f.size; if (!dryRun) await bucket.file(f.name).delete({ ignoreNotFound: true }); }
+    report.orphans = orphans.length;
+  } catch (e) { report.errors.push(`Listing files: ${e.message}`); }
+
+  report.swapped = report.swapped.slice(0, 200);
+  report.deleted = report.deleted.slice(0, 200);
+  report.skipped = report.skipped.slice(0, 50);
+  await db.doc(dryRun ? 'meta/photoCleanupPreview' : 'meta/photoCleanup').set(report);
+  if (!dryRun) {
+    await appendActivity({ type: 'SYS', verb: 'cleaned up photo storage', code: 'PHOTOS', obj: '', detail: `${report.files} files · ${(report.bytes / 1e6).toFixed(1)} MB freed · ${report.swapped.length} items now use Shopify's copies · ${report.deleted.length} sold/archived · ${report.orphans} orphans` });
+  }
+  if (report.errors.length) await writeSyslog('warn', 'photoCleanup', `Photo cleanup finished with ${report.errors.length} problem(s).`, report.errors.join('\n'));
+  return report;
+}
+
+exports.photoCleanupScheduled = onSchedule({ schedule: '17 4 1,15 * *', timeZone: 'America/New_York', secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET], timeoutSeconds: 540, memory: '512MiB' }, async () => {
+  const settingsSnap = await db.doc('meta/settings').get();
+  const cfg = ((settingsSnap.exists && settingsSnap.data().photoCleanup) || {});
+  if (cfg.enabled === false) return;
+  try { await runPhotoCleanup({ dryRun: false }); }
+  catch (error) { await logServerError('photoCleanupScheduled', error, null); throw error; }
+});
+
+// Settings → Photo cleanup: "Preview" (nothing deleted) or "Run now". Owners only.
+exports.photoCleanupRun = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET], timeoutSeconds: 540, memory: '512MiB' }, logged('photoCleanupRun', async request => {
+  await ownerFor(request);
+  const report = await runPhotoCleanup({ dryRun: !(request.data && request.data.run === true) });
+  return { ...report, mb: +(report.bytes / 1e6).toFixed(1) };
+}));

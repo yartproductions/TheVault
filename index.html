@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Obsidian Vault</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<script src="config.js?v=listing-cache-20261104"></script>
+<script src="config.js?v=photo-cleanup-20261104"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -252,7 +252,7 @@ const OWNER_COLORS = { o1: ['#3DDC97', '#06120D'], o2: ['#8EC3FF', '#071422'] };
 // ── state ─────────────────────────────────────────────────────────
 const S = {
   db: null, live: false, mode: 'local', fb: null, needLogin: false, login: null, assets: null, user: null, dl: null, uid: null,
-  items: {}, customers: {}, purchases: {}, sales: {}, txs: {}, activity: {}, members: {}, market: {}, marketMeta: {}, settings: { ...DEFAULT_SETTINGS }, loaded: {},
+  items: {}, customers: {}, purchases: {}, sales: {}, txs: {}, activity: {}, members: {}, market: {}, marketMeta: {}, photoCleanup: null, photoPreview: null, settings: { ...DEFAULT_SETTINGS }, loaded: {},
   pending: 0, syncErr: null, uploads: {},
   owner: null, pins: null, pinsLoaded: false,
   lock: { who: 'o1', pin: '', err: '', fails: 0, until: 0, setup: { p1: '', c1: '', p2: '', c2: '' } },
@@ -479,6 +479,8 @@ async function boot() {
   if (S.mode === 'firebase') {
     S.db.collection('market').limit(200).onSnapshot(snap => { const m = {}; snap.docs.forEach(d => { if (d.exists) m[d.id] = d.data(); }); S.market = m; renderSoon(); }, () => {});
     ref('meta/market').onSnapshot(s => { S.marketMeta = s.exists ? s.data() : {}; renderSoon(); }, () => {});
+    ref('meta/photoCleanup').onSnapshot(s => { S.photoCleanup = s.exists ? s.data() : null; renderSoon(); }, () => {});
+    ref('meta/photoCleanupPreview').onSnapshot(s => { S.photoPreview = s.exists ? s.data() : null; renderSoon(); }, () => {});
   }
   await loadPins();
   const saved = (() => { try { return sessionStorage.getItem('ov.owner'); } catch (e) { return null; } })();
@@ -591,6 +593,28 @@ function sysWatch() {
   SYS.sub = S.db.collection('syslog').limit(SYSLOG_MAX).onSnapshot(snap => {
     SYS.rows = snap.docs.filter(d => d.exists).map(d => ({ id: d.id, ...d.data() })).sort((a, b) => String(b.t).localeCompare(String(a.t))); SYS.err = ''; renderSoon();
   }, err => { SYS.err = (err && err.message) || 'Could not load the log.'; SYS.sub = null; renderSoon(); });
+}
+// ── Photo cleanup (runs on the 1st and 15th) ──────────────────────
+function photoCleanupSection() {
+  if (S.mode !== 'firebase' || (window.VAULT_CONFIG || {}).photos !== 'storage') return '';
+  const cfg = S.settings.photoCleanup || {}; const on = cfg.enabled !== false; const days = Number(cfg.soldDays) || 30;
+  const busy = S.ui.pcBusy; const owner = isAccountOwner();
+  const summary = (r, label) => r ? `<div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:6px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b style="font-size:13px">${label}</b><span class="sm mut2">${new Date(r.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span></div>
+      <div class="sm mut">${r.dryRun ? 'Would free' : 'Freed'} <b style="color:var(--tx)">${(r.bytes / 1e6).toFixed(1)} MB</b> in ${r.files} file${r.files === 1 ? '' : 's'} · ${r.swapped.length} item${r.swapped.length === 1 ? '' : 's'} ${r.dryRun ? 'would switch' : 'switched'} to Shopify's copies · ${r.deleted.length} sold/archived · ${r.orphans} unused file${r.orphans === 1 ? '' : 's'}</div>
+      ${r.skipped.length ? `<div class="sm mut2">Skipped (kept for now): ${r.skipped.slice(0, 6).map(esc).join(' · ')}${r.skipped.length > 6 ? ` · +${r.skipped.length - 6} more` : ''}</div>` : ''}
+      ${r.errors.length ? `<div class="sm" style="color:#F2A08A">${r.errors.slice(0, 3).map(esc).join(' · ')}</div>` : ''}</div>` : '';
+  return `<section class="card pad" style="display:flex;flex-direction:column;gap:14px;grid-column:1/-1">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><h2>Photo cleanup</h2><div class="sm mut2" style="margin-top:4px">Runs automatically on the 1st and 15th to keep Firebase photo storage small, without losing photos.</div></div>
+      <div class="seg">${[['on', 'On'], ['off', 'Off']].map(([k, l]) => `<button class="${on === (k === 'on') ? 'on' : ''}" data-act="pcEnable" data-v="${k}" ${owner ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;font-size:13px">
+      <div class="card pad-s" style="background:var(--card2)"><b style="color:#5FE6AC">On Shopify</b><div class="mut" style="margin-top:4px">Once Shopify has its own copy, the Vault shows Shopify's photo and the Firebase file is deleted.</div></div>
+      <div class="card pad-s" style="background:var(--card2)"><b style="color:#F2C063">Sold or archived</b><div class="mut" style="margin-top:4px">Photos not on Shopify are deleted <span class="seg" style="display:inline-flex;padding:2px;margin:4px 0;vertical-align:middle">${[14, 30, 90].map(d => `<button style="height:24px;padding:0 8px;font-size:12px" class="${days === d ? 'on' : ''}" data-act="pcDays" data-v="${d}" ${owner ? '' : 'disabled'}>${d} days</button>`).join('')}</span> after the sale or archive.</div></div>
+      <div class="card pad-s" style="background:var(--card2)"><b style="color:#8EC3FF">Unused files</b><div class="mut" style="margin-top:4px">Uploads no item uses anymore, after 14 days.</div></div>
+      <div class="card pad-s" style="background:var(--card2)"><b>Never touched</b><div class="mut" style="margin-top:4px">Photos of items in stock that aren't confirmed on Shopify.</div></div>
+    </div>
+    ${summary(S.photoPreview, 'Last preview (nothing deleted)')}${summary(S.photoCleanup, 'Last cleanup')}
+    ${owner ? `<div class="acts"><button class="btn" data-act="pcRun" data-v="preview" ${busy ? 'disabled' : ''}>${busy === 'preview' ? 'Checking…' : 'Preview cleanup'}</button><button class="btn danger" data-act="pcRun" data-v="run" ${busy ? 'disabled' : ''}>${busy === 'run' ? 'Cleaning up…' : 'Run now'}</button></div>` : '<div class="sm mut2">Only an owner account can change or run the cleanup.</div>'}
+  </section>`;
 }
 function sysSection() {
   sysWatch();
@@ -1329,6 +1353,7 @@ function pSettings() {
         <div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:10px"><b style="font-size:14px">Restore / import</b><span class="sm mut2">A vault backup, or a backup from the old Obsidian Vault site.</span><label class="btn">${ic('up', 16)}Choose file<input type="file" accept="application/json,.json" data-restore="1" style="display:none"></label></div>
         <div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:10px"><b style="font-size:14px">Spreadsheet exports</b><span class="sm mut2">Open in Google Sheets or Excel.</span><div class="acts"><button class="btn sm" data-act="csvItems">Items</button><button class="btn sm" data-act="csvTx">Transactions</button><button class="btn sm" data-act="csvCust">Customers</button></div></div></div>
       <div class="sm mut2" id="usage">${S.assets && S.assets.list ? '<button class="btn sm" data-act="usage">Check photo storage</button>' : ''}</div></section>
+    ${photoCleanupSection()}
     ${sysSection()}</div>`;
 }
 
@@ -1788,6 +1813,17 @@ const ACT = {
     el.disabled = true;
     try { const r = await ShopifyAdapter.connectOrders(); await saveSetting({ shopify: { ...S.settings.shopify, ordersConnected: true } }); logAct('SYS', 'connected Shopify orders', 'SHOPIFY', '', r.uri || ''); toast(r.already ? 'Shopify orders were already connected.' : 'Shopify orders connected. Paid orders will now mark units Sold.'); }
     catch (e) { el.disabled = false; toast((e && e.message) || 'Could not connect Shopify orders.', 'err'); }
+  },
+  pcEnable: async el => { await saveSetting({ photoCleanup: { ...(S.settings.photoCleanup || {}), enabled: el.dataset.v === 'on' } }); },
+  pcDays: async el => { await saveSetting({ photoCleanup: { ...(S.settings.photoCleanup || {}), soldDays: +el.dataset.v } }); },
+  pcRun: async el => {
+    if (!isAccountOwner()) return toast('Only an owner account can run the cleanup.', 'err');
+    const run = el.dataset.v === 'run';
+    if (run && !await confirmBox({ title: 'Clean up photo storage now?', body: 'Firebase copies of photos already on Shopify, photos of items sold or archived past the waiting period, and unused uploads are deleted. Photos of in-stock items not on Shopify are kept. Run Preview first to see what will go.', ok: 'Run cleanup', danger: 1 })) return;
+    S.ui.pcBusy = run ? 'run' : 'preview'; render();
+    try { const r = await S.fb.call('photoCleanupRun', { run }); toast(run ? `Cleanup done: ${r.mb} MB freed.` : `Preview: ${r.mb} MB in ${r.files} files could be freed.`); }
+    catch (e) { toast((e && e.message) || 'Photo cleanup failed.', 'err'); }
+    finally { S.ui.pcBusy = ''; render(); }
   },
   shWear: async el => { await saveSetting({ shopify: { ...S.settings.shopify, standardWear: el.dataset.v === 'on' } }); },
   shMode: async el => { await saveSetting({ shopify: { ...S.settings.shopify, mode: el.dataset.v } }); },

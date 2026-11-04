@@ -105,6 +105,16 @@ Setup (once):
 4. Make `ebayaccountdeletion` publicly accessible in Cloud Run (Security tab), like the other functions.
 5. Open **Market → Refresh now**.
 
+## Photo cleanup
+
+On the 1st and 15th of each month (America/New_York, early morning) a backend job keeps Firebase photo storage small without losing photos (rules in `functions/photos.js`):
+- **On Shopify:** once Shopify reports its copies as READY, the item's photos switch to Shopify's copies and the Firebase files are deleted.
+- **Sold or archived** for 14 / 30 (default) / 90 days with photos not on Shopify: the photos are deleted.
+- **Unused uploads** no item refers to, after 14 days.
+- **Never touched:** photos of in-stock items that aren't confirmed on Shopify.
+
+**Settings → Photo cleanup** turns it on/off, sets the waiting period, shows the last run, and has **Preview cleanup** (nothing deleted) and **Run now** (owners only). Each run is logged in Activity; problems go to the System log.
+
 ## Database rules
 
 `firestore.rules` gives every vault account two levels:
