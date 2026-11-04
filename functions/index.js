@@ -536,6 +536,7 @@ const EBAY_CLIENT_ID = defineSecret('EBAY_CLIENT_ID');
 const EBAY_CLIENT_SECRET = defineSecret('EBAY_CLIENT_SECRET');
 const EBAY_VERIFICATION_TOKEN = defineSecret('EBAY_VERIFICATION_TOKEN');
 const EBAY_SECRETS = [EBAY_CLIENT_ID, EBAY_CLIENT_SECRET];
+const EBAY_DELETION_ENDPOINT = 'https://us-east1-obsidian-vault-38dfd.cloudfunctions.net/ebayAccountDeletion';
 const MARKET_MAX_MODELS = 60;
 const MARKET_MAX_PAGES = 5; // up to 1,000 listings per model
 const MARKET_HISTORY = 180;
@@ -685,8 +686,8 @@ exports.ebayMarketWatch = onCall({ secrets: EBAY_SECRETS, timeoutSeconds: 120 },
 // eBay requires production apps to accept account-deletion notices. The Vault keeps no
 // eBay user data, so it only answers eBay's endpoint check and acknowledges each notice.
 exports.ebayAccountDeletion = onRequest({ secrets: [EBAY_VERIFICATION_TOKEN], invoker: 'public' }, async (req, res) => {
-  const project = process.env.GCLOUD_PROJECT || JSON.parse(process.env.FIREBASE_CONFIG || '{}').projectId;
-  const endpoint = `https://us-east1-${project}.cloudfunctions.net/ebayAccountDeletion`;
+  // Must be exactly the URL entered in the eBay developer portal: eBay hashes it.
+  const endpoint = EBAY_DELETION_ENDPOINT;
   if (req.method === 'GET' && req.query.challenge_code) {
     const challengeResponse = market.ebayChallengeResponse(req.query.challenge_code, EBAY_VERIFICATION_TOKEN.value().trim(), endpoint);
     return res.status(200).json({ challengeResponse });
