@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Obsidian Vault</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<script src="config.js?v=intake-queue-20261029"></script>
+<script src="config.js?v=sales-sync-20261103"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -266,6 +266,9 @@ const S = {
 };
 const ownerName = o => o && o.startsWith('m_') ? ((S.members[o.slice(2)] || {}).displayName || (S.members[o.slice(2)] || {}).email || 'Member') : (S.settings.owners || {})[o] || (o === 'o2' ? 'Owner 2' : o === 'sys' ? 'System' : 'Owner 1');
 const isOwnerProfile = o => o === 'o1' || o === 'o2';
+// The signed-in Firebase account's role. The database rules only let owner accounts delete records or change settings.
+const BOOTSTRAP_OWNERS = ['paulckinckay@gmail.com', 'kohlindersjohn@gmail.com'];
+const isAccountOwner = () => S.mode !== 'firebase' || BOOTSTRAP_OWNERS.includes(String(S.fbEmail || '').toLowerCase()) || (S.members[S.uid] || {}).role === 'owner';
 const memberProfiles = () => Object.entries(S.members).filter(([, m]) => m.active !== false && m.role === 'member').map(([uid, m]) => ({ id: 'm_' + uid, name: m.displayName || m.email || 'Member' }));
 
 // ════════════════════════════════════════════════════════════════
@@ -797,13 +800,14 @@ function packetCard(it, pk, photos, up, sh) {
   const live = pk.shopifyStatus === 'ACTIVE';
   const parent = it.listedIn && it.listedIn !== it.code && S.items[it.listedIn] ? it.listedIn : '';
   const units = listingUnitsOf(it); const pool = unitPool(it); const maxQty = 1 + pool.filter(i => !units.includes(i.code)).length + units.length - 1;
-  const synced = pk.shopifyId && num(pk.shopifyQty || 1) !== units.length;
+  const inStock = stockOf(units); const soldOut = pk.shopifyId && !inStock;
+  const synced = pk.shopifyId && num(pk.shopifyQty ?? 1) !== inStock;
   const qtyRow = parent ? '' : `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border-radius:12px;background:var(--card2);border:1px solid var(--line)">
-      <div><div style="font-weight:500;font-size:14px">${ic('layers', 14)} Quantity in this listing</div><div class="sm mut2" style="margin-top:3px">${maxQty > 1 ? `${maxQty} matching unit${maxQty > 1 ? 's' : ''} in stock from ${esc(it.purchaseId)}` : 'One unit — no other matching units from this purchase'}${units.length > 1 ? ` · ${units.map(c => esc(c)).join(', ')}` : ''}${synced ? ' · <span style="color:#F2C063">Shopify shows ' + num(pk.shopifyQty || 1) + ' — press Update to sync</span>' : ''}</div></div>
+      <div><div style="font-weight:500;font-size:14px">${ic('layers', 14)} Quantity in this listing</div><div class="sm mut2" style="margin-top:3px">${maxQty > 1 ? `${maxQty} matching unit${maxQty > 1 ? 's' : ''} in stock from ${esc(it.purchaseId)}` : 'One unit — no other matching units from this purchase'}${units.length > 1 ? ` · ${units.map(c => esc(c)).join(', ')}` : ''}${synced ? ' · <span style="color:#F2C063">Shopify shows ' + num(pk.shopifyQty || 1) + ' — press Update to sync</span>' : ''}${inStock !== units.length ? ` · ${units.length - inStock} sold` : ''}</div></div>
       <div class="acts" style="align-items:center"><button class="btn ic sm" data-act="pkQty" data-code="${esc(it.code)}" data-d="-1" aria-label="One fewer" ${units.length <= 1 ? 'disabled' : ''}>−</button><span class="mono" style="min-width:28px;text-align:center;font-size:18px">${units.length}</span><button class="btn ic sm" data-act="pkQty" data-code="${esc(it.code)}" data-d="1" aria-label="One more" ${units.length >= maxQty ? 'disabled' : ''}>＋</button></div></div>`;
   return `<section class="card pad" style="display:flex;flex-direction:column;gap:18px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><h2>Shopify listing packet ${pk.code ? codeChip(pk.code) : ''}</h2><div class="sm mut2" style="margin-top:4px">JPEG, PNG or WebP · up to 12 photos · large photos are resized automatically</div></div>
-      <span style="font-size:11px;font-weight:600;letter-spacing:1.4px;color:${live ? '#06120D' : pk.shopifyId ? '#5FE6AC' : '#F2C063'};padding:5px 10px;border-radius:6px;background:${live ? '#3DDC97' : pk.shopifyId ? '#0F2A1F' : '#2B2312'}">${live ? 'ACTIVE ON SHOPIFY' : pk.shopifyId ? 'SHOPIFY DRAFT' : 'NOT ON SHOPIFY'}</span></div>
+      <span style="font-size:11px;font-weight:600;letter-spacing:1.4px;color:${live ? '#06120D' : pk.shopifyId ? '#5FE6AC' : '#F2C063'};padding:5px 10px;border-radius:6px;background:${live ? '#3DDC97' : pk.shopifyId ? '#0F2A1F' : '#2B2312'}">${soldOut ? 'SOLD OUT' : live ? 'ACTIVE ON SHOPIFY' : pk.shopifyId ? 'SHOPIFY DRAFT' : 'NOT ON SHOPIFY'}</span></div>
     ${parent ? `<div class="notice info"><div>This unit is included in the Shopify listing for <a href="#/item/${encodeURIComponent(it.listedIn)}">${esc(it.listedIn)}</a>. Manage photos, quantity and Shopify from that record.</div></div>` : ''}
     <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px">${tiles}${busy}${drop}</div>
     <div class="grid g4" style="gap:14px">${fIn(it, 'packet.title', 'Listing title', { cls: 'span3', icon: 'tag', ph: it.title })}${fIn(it, 'packet.price', 'Price', { money: 1, icon: 'cash', ph: it.resale })}
@@ -813,7 +817,7 @@ function packetCard(it, pk, photos, up, sh) {
       <span class="sm mut2">${connected ? `Shopify drafts enabled${sh.store ? ': ' + esc(sh.store) : ''} · SKU ${esc(it.code)}` : 'Shopify draft creation is off — export still works. <a href="#/settings">Configure it</a>'}</span>
       <div class="acts"><button class="btn" data-act="pkZip" data-code="${esc(it.code)}">${ic('down', 16)}Photos (.zip)</button><button class="btn" data-act="pkCsv" data-code="${esc(it.code)}">${ic('down', 16)}Shopify CSV</button>
       ${connected && !parent ? (!pk.shopifyId ? `<button class="btn pri" data-act="pkPush" data-code="${esc(it.code)}">${ic('shop', 16)}Create Shopify draft</button>`
-        : `<button class="btn ${live ? 'pri' : ''}" data-act="pkPush" data-code="${esc(it.code)}">${ic('shop', 16)}${live ? 'Update Shopify listing' : 'Update Shopify draft'}</button>${live ? '' : `<button class="btn pri" data-act="pkActivate" data-code="${esc(it.code)}">${ic('check', 16)}Activate Shopify listing</button>`}`) : ''}${pk.shopifyUrl ? `<a class="btn" href="${esc(pk.shopifyUrl)}" target="_blank" rel="noopener">Open in Shopify ↗</a>` : ''}</div></div></section>`;
+        : `<button class="btn ${live ? 'pri' : ''}" data-act="pkPush" data-code="${esc(it.code)}">${ic('shop', 16)}${live ? 'Update Shopify listing' : 'Update Shopify draft'}</button>${live || soldOut ? '' : `<button class="btn pri" data-act="pkActivate" data-code="${esc(it.code)}">${ic('check', 16)}Activate Shopify listing</button>`}`) : ''}${pk.shopifyUrl ? `<a class="btn" href="${esc(pk.shopifyUrl)}" target="_blank" rel="noopener">Open in Shopify ↗</a>` : ''}</div></div></section>`;
 }
 function saleCard(it) {
   const s = it.sale;
@@ -997,7 +1001,7 @@ function pActivity() {
 function pSettings() {
   const st = S.settings; const sh = st.shopify || {};
   const sf = (path, label, o = {}) => `<div class="fld ${o.cls || ''}"><label for="sf-${path.replace(/\./g, '-')}">${label}</label><input class="in ${o.mono ? 'mono' : ''}" id="sf-${path.replace(/\./g, '-')}" data-sfield="${path}" ${o.num ? 'inputmode="decimal"' : ''} value="${esc(path.split('.').reduce((a, k) => (a || {})[k], st) ?? '')}" placeholder="${esc(o.ph || '')}"></div>`;
-  const me = S.members[S.uid] || {}; const canManage = me.role === 'owner' || ['paulckinckay@gmail.com', 'kohlindersjohn@gmail.com'].includes(S.fbEmail || '');
+  const canManage = isAccountOwner();
   const members = Object.entries(S.members).sort((a, b) => String(a[1].email).localeCompare(String(b[1].email)));
   const invite = S.ui.memberInvite;
   return head('Owners, Shopify, storage and data', 'Settings') + `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));align-items:start;gap:20px">
@@ -1019,7 +1023,9 @@ function pSettings() {
     <section class="card pad" style="display:flex;flex-direction:column;gap:16px;grid-column:1/-1"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="display:flex;align-items:center;gap:12px"><span class="cat" style="width:40px;height:40px;background:#0F2A1F;color:#5FE6AC">${ic('shop', 20)}</span><div><h2>Shopify integration</h2><div class="sm mut2" style="margin-top:3px">Create Shopify draft products directly from completed Vault packets.</div></div></div>
       <span class="chip ${sh.mode === 'firebase' ? 's-prep' : 's-arch'}"><i></i>${sh.mode === 'firebase' ? 'Firebase integration' : 'Export mode'}</span></div>
       <div class="seg" style="align-self:flex-start">${[['export', 'Export files'], ['firebase', 'Create Shopify drafts']].map(([k, l]) => `<button class="${sh.mode === k ? 'on' : ''}" data-act="shMode" data-v="${k}">${l}</button>`).join('')}</div>
-      ${sh.mode === 'firebase' ? `<div class="grid g2 stack">${sf('shopify.store', 'Store domain', { ph: 'your-store.myshopify.com', mono: 1 })}<div class="notice info"><div><b>SKU rule</b><br>Every Shopify variant uses its permanent Vault code exactly: <span class="mono">VR-00001</span>. Quantity starts at 1 and the product remains a draft.</div></div></div>` : ''}
+      ${sh.mode === 'firebase' ? `<div class="grid g2 stack">${sf('shopify.store', 'Store domain', { ph: 'your-store.myshopify.com', mono: 1 })}<div class="notice info"><div><b>SKU rule</b><br>Every Shopify variant uses its permanent Vault code exactly: <span class="mono">VR-00001</span>. Quantity matches the units in the listing and the product starts as a draft.</div></div></div>
+      <div class="card pad-s" style="background:var(--card2);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="min-width:220px;flex:1"><b style="font-size:14px">Sales sync</b><div class="sm mut2" style="margin-top:4px">Vault sales and returns update Shopify's quantity automatically (back to Draft at zero). Connect orders so paid Shopify orders mark units Sold and book the sale here.${sh.ordersConnected ? ' <span style="color:#5FE6AC">● Orders connected</span>' : ''}</div></div>
+        <button class="btn ${sh.ordersConnected ? '' : 'pri'}" data-act="shConnectOrders">${ic('sync', 16)}${sh.ordersConnected ? 'Reconnect orders' : 'Connect Shopify orders'}</button></div>` : ''}
       <div class="grid g2 stack" style="gap:16px">
         <div class="notice info" style="flex-direction:column;gap:6px"><b>Today — Export mode</b><span>Every listing packet has <b>Shopify CSV</b> and <b>Photos (.zip)</b> buttons. In any store’s admin: <i>Products → Import</i> the CSV, then drag the photos onto the product. Nothing here is tied to a particular store.</span></div>
         <div class="notice" style="flex-direction:column;gap:6px"><b>Direct draft creation</b><span>Firebase Functions keeps the Shopify client secret off this website. The Vault sends the permanent VR code; the function reads the saved packet, creates or updates the Shopify draft, attaches its photos, sets quantity to 1, and returns the Shopify admin link.</span></div></div></section>
@@ -1057,7 +1063,7 @@ function modalHtml() {
       <div class="fld"><label for="t-ref">Reference</label><input class="in mono" id="t-ref" data-bind="modal.d.ref" value="${esc(t.ref || '')}"></div><div class="fld"><label for="t-tags">Tags</label><input class="in" id="t-tags" data-bind="modal.d.tags" value="${esc(t.tags || '')}" placeholder="comma separated"></div>
       <div class="fld span2"><label for="t-notes">Notes</label><textarea class="ta" id="t-notes" data-bind="modal.d.notes" rows="2">${esc(t.notes || '')}</textarea></div></div>
       ${M.err ? `<div class="notice bad">${esc(M.err)}</div>` : ''}</div>
-    <div class="mf">${t.code && !t.link ? `<button class="btn danger" style="margin-right:auto" data-act="txDel">Delete</button>` : ''}<button class="btn" data-act="mClose">Cancel</button><button class="btn pri" data-act="txSave" ${M.busy ? 'disabled' : ''}>${M.busy ? 'Saving…' : t.code ? 'Save changes' : 'Log transaction'}</button></div></div></div>`;
+    <div class="mf">${t.code && !t.link && isAccountOwner() ? `<button class="btn danger" style="margin-right:auto" data-act="txDel">Delete</button>` : ''}<button class="btn" data-act="mClose">Cancel</button><button class="btn pri" data-act="txSave" ${M.busy ? 'disabled' : ''}>${M.busy ? 'Saving…' : t.code ? 'Save changes' : 'Log transaction'}</button></div></div></div>`;
   }
   if (M.kind === 'cust') {
     const c = M.d;
@@ -1148,8 +1154,17 @@ async function savePhotos(code, photos, verb) { try { await write(() => ref('ite
 const ShopifyAdapter = {
   configured() { return S.mode === 'firebase' && S.fb && (S.settings.shopify || {}).mode === 'firebase'; },
   pushDraft(code) { return S.fb.call('shopifySaveDraft', { code }); },
-  activate(code) { return S.fb.call('shopifyActivate', { code }); }
+  activate(code) { return S.fb.call('shopifyActivate', { code }); },
+  sync(code) { return S.fb.call('shopifySyncListing', { code }); },
+  connectOrders() { return S.fb.call('shopifyConnectOrders', {}); }
 };
+// After a sale or return in the Vault, make Shopify's quantity match what is left in stock.
+function onShopify(it) { const pk = it.packet || {}; return !!(pk.shopifyId || (it.listedIn && S.items[it.listedIn] && (S.items[it.listedIn].packet || {}).shopifyId)); }
+async function syncShopifyAfter(it, why) {
+  if (!ShopifyAdapter.configured() || !onShopify(it)) return;
+  try { const r = await ShopifyAdapter.sync(it.code); if (r && r.synced) toast(`Shopify updated after the ${why}: ${r.quantity} left${r.quantity === 0 ? ', listing back to Draft' : ''}.`); }
+  catch (e) { toast(`The ${why} is saved, but Shopify could not be updated. Open the listing and press Update.`, 'err'); }
+}
 // Other in-stock units from the same purchase with the same title can join this listing.
 function unitPool(it) {
   if (!it.purchaseId) return [];
@@ -1157,6 +1172,7 @@ function unitPool(it) {
     && !['sold', 'arch'].includes(i.status) && (!i.listedIn || i.listedIn === it.code) && !(i.packet || {}).shopifyId && !((i.packet || {}).units || []).filter(c => c !== i.code).length)
     .sort((a, b) => a.code.localeCompare(b.code));
 }
+const stockOf = codes => codes.filter(c => S.items[c] && STOCK.includes(S.items[c].status)).length;
 function listingUnitsOf(it) { const u = ((it.packet || {}).units || []).filter(c => c !== it.code && S.items[c] && !['sold', 'arch'].includes(S.items[c].status)); return [it.code, ...u]; }
 const descHtml = t => String(t || '').split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
 function packetOf(it) { const pk = it.packet || {}; return { title: pk.title || it.title, price: num(pk.price || it.resale), description: pk.description || it.defect || '', photos: pk.photos || [] }; }
@@ -1263,6 +1279,7 @@ async function completeSale() {
     await write(() => ref('txs/' + tx).set({ code: tx, date: s.date, desc: `Sale ${sl} · ${it.title}`, amount: net, category: 'Sales', method: 'Payout', by: S.owner, payee: s.buyer.trim() || s.channel, ref: s.order.trim(), link: sl, tags: s.channel, notes: `Price ${money(s.price)} − fees ${money(s.fees)} − shipping ${money(s.ship)}`, createdAt: nowISO() }), tx);
     logAct('SL', 'recorded sale', sl, it.title, `${s.channel} · ${money(s.price)} · net ${money(profit, 1)}`, [it.code, tx], STATUS[it.status][0], 'Sold');
     S.ui.sale = null; toast(`Sale ${sl} recorded.`); go('#/item/' + encodeURIComponent(it.code));
+    syncShopifyAfter({ ...it, status: 'sold' }, 'sale');
   } catch (e) { s.busy = false; s.err = (e && e.message) || 'Could not save the sale. Try again.'; render(); }
 }
 
@@ -1314,7 +1331,7 @@ const ACT = {
   advance: el => { const it = S.items[el.dataset.code]; const n = FLOW[FLOW.indexOf(it.status) + 1]; if (n && n !== 'sold') setStatus(it.code, n, 'advanced'); },
   archive: async el => { const it = S.items[el.dataset.code]; if (await confirmBox({ title: `Archive ${it.code}?`, body: 'It leaves the Inventory Vault but stays in the Master Vault. Use this for write-offs, parted-out units or items you’re keeping.', ok: 'Archive', input: 'Reason (optional)' })) { const aj = await nextCode('AJ').catch(() => ''); await write(() => ref('items/' + it.code).update({ status: 'arch', archiveReason: S.modalVal || '', updatedAt: nowISO() })).catch(() => {}); logAct('AJ', 'archived', aj, it.title, S.modalVal || '', [it.code], STATUS[it.status][0], 'Archived'); } },
   unarchive: el => setStatus(el.dataset.code, 'new', 'restored to stock'),
-  returnSale: async el => { const it = S.items[el.dataset.code]; if (!await confirmBox({ title: `Process a return for ${it.code}?`, body: 'The item goes back to Processing, and a refund equal to the sale payout is logged in Bookkeeping.', ok: 'Process return', danger: 1 })) return; const rt = await nextCode('RT'); const tx = await nextCode('TX'); const s = it.sale || {}; const net = num(s.price) - num(s.fees) - num(s.ship); await write(() => ref('txs/' + tx).set({ code: tx, date: localISO(), desc: `Return ${rt} · ${it.title}`, amount: -net, category: 'Sales', method: 'Payout', by: S.owner, payee: s.buyer || s.channel || '', ref: s.order || '', link: rt, tags: 'return', notes: '', createdAt: nowISO() })); await write(() => ref('items/' + it.code).update({ status: 'proc', sale: null, lastSale: { ...s, returned: rt }, updatedAt: nowISO() })); logAct('RT', 'processed return', rt, it.title, `Refunded ${money(net)}`, [it.code, s.code, tx].filter(Boolean), 'Sold', 'Processing'); toast(`Return ${rt} recorded.`); },
+  returnSale: async el => { const it = S.items[el.dataset.code]; if (!await confirmBox({ title: `Process a return for ${it.code}?`, body: 'The item goes back to Processing, and a refund equal to the sale payout is logged in Bookkeeping.', ok: 'Process return', danger: 1 })) return; const rt = await nextCode('RT'); const tx = await nextCode('TX'); const s = it.sale || {}; const net = num(s.price) - num(s.fees) - num(s.ship); await write(() => ref('txs/' + tx).set({ code: tx, date: localISO(), desc: `Return ${rt} · ${it.title}`, amount: -net, category: 'Sales', method: 'Payout', by: S.owner, payee: s.buyer || s.channel || '', ref: s.order || '', link: rt, tags: 'return', notes: '', createdAt: nowISO() })); await write(() => ref('items/' + it.code).update({ status: 'proc', sale: null, lastSale: { ...s, returned: rt }, updatedAt: nowISO() })); logAct('RT', 'processed return', rt, it.title, `Refunded ${money(net)}`, [it.code, s.code, tx].filter(Boolean), 'Sold', 'Processing'); toast(`Return ${rt} recorded.`); syncShopifyAfter(it, 'return'); },
   phMove: el => { const it = S.items[el.dataset.code]; const p = [...it.packet.photos]; const i = +el.dataset.i, j = i + +el.dataset.d; if (j < 0 || j >= p.length) return; [p[i], p[j]] = [p[j], p[i]]; savePhotos(it.code, p); },
   phCover: el => { const it = S.items[el.dataset.code]; const p = [...it.packet.photos]; const [x] = p.splice(+el.dataset.i, 1); p.unshift(x); savePhotos(it.code, p, 'changed the cover photo of'); },
   phDel: async el => { const it = S.items[el.dataset.code]; const p = [...it.packet.photos]; const [id] = p.splice(+el.dataset.i, 1); if (!await confirmBox({ title: 'Remove this photo?', body: 'It is deleted from the vault for good.', ok: 'Remove', danger: 1 })) return; await savePhotos(it.code, p, 'removed a photo from'); if (S.assets) S.assets.delete(id).catch(() => {}); },
@@ -1344,6 +1361,7 @@ const ACT = {
   sysDownload: async () => { const t = sysText(sysRows()); if (!t) return toast('The log is empty.'); await saveFile(`vault-system-log-${localISO()}.txt`, t); },
   sysTest: () => { sysLog('info', 'app', 'settings', 'Test entry: the system log is working.', 'Written from Settings → System log.'); toast('Test entry written.'); },
   sysClear: async () => {
+    if (!isAccountOwner()) return toast('Only an owner account can clear the log.', 'err');
     const rows = [...SYS.rows]; if (!rows.length) return;
     if (!await confirmBox({ title: `Clear ${rows.length} log entr${rows.length > 1 ? 'ies' : 'y'}?`, body: 'This deletes the entries for every device. Download the log first if you may need it.', ok: 'Clear log', danger: 1 })) return;
     let n = 0; for (const r of rows) { try { await ref('syslog/' + r.id).delete(); n++; } catch (e) {} }
@@ -1352,7 +1370,7 @@ const ACT = {
   pkActivate: async el => {
     const it = S.items[el.dataset.code]; if (!ShopifyAdapter.configured()) return go('#/settings'); const pk = it.packet || {};
     if (!pk.shopifyId) return toast('Create the Shopify draft first.', 'err');
-    const n = listingUnitsOf(it).length;
+    const n = stockOf(listingUnitsOf(it));
     if (!await confirmBox({ title: `Activate ${it.code} on Shopify?`, body: `The product goes live on Shopify with a quantity of ${n}, and ${n > 1 ? `all ${n} units move` : 'the item moves'} to Listed in the Vault.`, ok: 'Activate listing' })) return;
     el.disabled = true;
     try {
@@ -1423,11 +1441,18 @@ const ACT = {
       S.modal = null; render(); toast('Financial record saved.');
     } catch (e) { M.busy = false; M.err = 'Could not save the financial entry.'; render(); }
   },
-  txDel: async () => { const t = S.modal.d; const keep = S.modal; if (!await confirmBox({ title: `Delete ${t.code}?`, body: 'This manually logged transaction is removed. The deletion is recorded in Activity.', ok: 'Delete', danger: 1 })) { S.modal = keep; return render(); } try { await write(() => ref('txs/' + t.code).delete()); logAct('TX', 'deleted transaction', t.code, t.desc, money(S.txs[t.code] ? S.txs[t.code].amount : 0, 1)); toast('Transaction deleted.'); } catch (e) {} },
+  txDel: async () => { if (!isAccountOwner()) return toast('Only an owner account can delete transactions.', 'err'); const t = S.modal.d; const keep = S.modal; if (!await confirmBox({ title: `Delete ${t.code}?`, body: 'This manually logged transaction is removed. The deletion is recorded in Activity.', ok: 'Delete', danger: 1 })) { S.modal = keep; return render(); } try { await write(() => ref('txs/' + t.code).delete()); logAct('TX', 'deleted transaction', t.code, t.desc, money(S.txs[t.code] ? S.txs[t.code].amount : 0, 1)); toast('Transaction deleted.'); } catch (e) {} },
   // activity
   actType: el => { S.ui.act.type = el.dataset.v; render(); },
   actWho: el => { S.ui.act.who = el.dataset.v; render(); },
   // settings
+  shConnectOrders: async el => {
+    if (!ShopifyAdapter.configured()) return toast('Switch Shopify to Create Shopify drafts first.', 'err');
+    if (!isAccountOwner()) return toast('Only an owner account can connect Shopify orders.', 'err');
+    el.disabled = true;
+    try { const r = await ShopifyAdapter.connectOrders(); await saveSetting({ shopify: { ...S.settings.shopify, ordersConnected: true } }); logAct('SYS', 'connected Shopify orders', 'SHOPIFY', '', r.uri || ''); toast(r.already ? 'Shopify orders were already connected.' : 'Shopify orders connected. Paid orders will now mark units Sold.'); }
+    catch (e) { el.disabled = false; toast((e && e.message) || 'Could not connect Shopify orders.', 'err'); }
+  },
   shMode: async el => { await saveSetting({ shopify: { ...S.settings.shopify, mode: el.dataset.v } }); },
   memberInvite: async () => {
     const email = ($('#member-email') || {}).value || ''; const displayName = ($('#member-name') || {}).value || ''; const role = (($('#member-role') || {}).value || 'member');

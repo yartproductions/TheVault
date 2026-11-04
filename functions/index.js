@@ -3,9 +3,10 @@ const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { FieldValue, getFirestore } = require('firebase-admin/firestore');
 const { setGlobalOptions } = require('firebase-functions/v2');
-const { HttpsError, onCall } = require('firebase-functions/v2/https');
+const { HttpsError, onCall, onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const { vaultSku, listingUnits } = require('./sku');
+const orders = require('./orders');
 
 initializeApp();
 setGlobalOptions({ region: 'us-east1', maxInstances: 5 });
@@ -204,22 +205,37 @@ function checkUserErrors(payload) {
   return payload;
 }
 
-// Works out which physical units a listing covers and checks each is still sellable.
-async function resolveUnits(sku, packet) {
-  const codes = listingUnits(sku, packet.units);
+// Works out which physical units a listing covers, and which of those are still in stock.
+// The listing's own record is always a member; other units must not belong to another listing.
+async function resolveUnits(sku, packet, mainItem) {
   const units = [];
-  for (const code of codes) {
-    const snap = code === sku ? null : await db.doc(`items/${code}`).get();
-    if (snap && !snap.exists) continue;
-    const data = snap ? snap.data() : null;
-    if (data) {
-      if (data.status === 'sold' || data.status === 'arch') continue;
+  const inStock = [];
+  for (const code of listingUnits(sku, packet.units)) {
+    let data = mainItem;
+    if (code !== sku) {
+      const snap = await db.doc(`items/${code}`).get();
+      if (!snap.exists) continue;
+      data = snap.data();
       if (data.listedIn && data.listedIn !== sku) continue;
       if (data.packet && data.packet.shopifyId) continue;
     }
     units.push(code);
+    if (data && orders.IN_STOCK.has(data.status)) inStock.push(code);
   }
-  return units;
+  return { units, inStock };
+}
+
+// The Shopify listing a unit belongs to: its own, or the one it was pulled into.
+async function listingFor(code) {
+  const snap = await db.doc(`items/${code}`).get();
+  if (!snap.exists) return null;
+  const item = snap.data();
+  if (item.packet && item.packet.shopifyId) return { sku: code, item };
+  if (item.listedIn) {
+    const parent = await db.doc(`items/${item.listedIn}`).get();
+    if (parent.exists && parent.data().packet && parent.data().packet.shopifyId) return { sku: item.listedIn, item: parent.data() };
+  }
+  return null;
 }
 
 async function primaryLocationId(connection) {
@@ -253,8 +269,9 @@ exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, S
   const price = Number(packet.price || item.resale);
   if (!title) throw new HttpsError('failed-precondition', 'Add a listing title first.');
   if (!(price > 0)) throw new HttpsError('failed-precondition', 'Add a valid listing price first.');
-  const units = await resolveUnits(sku, packet);
-  const quantity = units.length;
+  const { units, inStock } = await resolveUnits(sku, packet, item);
+  const quantity = inStock.length;
+  if (!quantity) throw new HttpsError('failed-precondition', 'Every unit in this listing is sold or archived.');
 
   const connection = await shopifyToken();
   const productInput = {
@@ -312,22 +329,199 @@ exports.shopifyActivate = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SH
   const item = itemSnap.data();
   const packet = item.packet || {};
   if (!packet.shopifyId) throw new HttpsError('failed-precondition', 'Create the Shopify draft first.');
-  if (item.status === 'sold' || item.status === 'arch') throw new HttpsError('failed-precondition', 'This item is no longer in stock.');
-  const units = await resolveUnits(sku, packet);
+  const { units, inStock } = await resolveUnits(sku, packet, item);
+  if (!inStock.length) throw new HttpsError('failed-precondition', 'Every unit in this listing is sold or archived.');
 
   const connection = await shopifyToken();
-  if (packet.shopifyInventoryItemId) await setAvailable(connection, packet.shopifyInventoryItemId, units.length);
+  if (packet.shopifyInventoryItemId) await setAvailable(connection, packet.shopifyInventoryItemId, inStock.length);
   const data = await shopifyGraphql(connection,
     `mutation ActivateProduct($product: ProductUpdateInput!) { productUpdate(product: $product) { product { id status } userErrors { field message } } }`,
     { product: { id: packet.shopifyId, status: 'ACTIVE' } });
   const product = checkUserErrors(data.productUpdate).product;
 
-  // Only after Shopify confirms do the Vault records move to Listed.
+  // Only after Shopify confirms do the in-stock units move to Listed.
   const now = new Date().toISOString();
   const batch = db.batch();
-  units.forEach(code => batch.set(db.doc(`items/${code}`), code === sku
-    ? { status: 'list', updatedAt: now, packet: { shopifyStatus: product.status, shopifyQty: units.length, units, shopifyActivatedAt: FieldValue.serverTimestamp() } }
-    : { status: 'list', updatedAt: now, listedIn: sku }, { merge: true }));
+  batch.set(itemRef, { packet: { shopifyStatus: product.status, shopifyQty: inStock.length, units, shopifyActivatedAt: FieldValue.serverTimestamp() } }, { merge: true });
+  inStock.forEach(code => batch.set(db.doc(`items/${code}`), code === sku ? { status: 'list', updatedAt: now } : { status: 'list', updatedAt: now, listedIn: sku }, { merge: true }));
   await batch.commit();
-  return { id: product.id, status: product.status, quantity: units.length, units };
+  return { id: product.id, status: product.status, quantity: inStock.length, units: inStock };
+}));
+
+// ── Sales sync ───────────────────────────────────────────────────
+// Makes Shopify's quantity match the units still in stock. At zero the product goes back
+// to Draft so it disappears from the store; a return brings the quantity back up.
+async function syncListingStock(connection, sku) {
+  const itemRef = db.doc(`items/${sku}`);
+  const snap = await itemRef.get();
+  if (!snap.exists) return null;
+  const item = snap.data();
+  const packet = item.packet || {};
+  if (!packet.shopifyId) return null;
+  const { inStock } = await resolveUnits(sku, packet, item);
+  const quantity = inStock.length;
+  let inventoryItemId = packet.shopifyInventoryItemId;
+  if (!inventoryItemId) {
+    const data = await shopifyGraphql(connection, `query Variant($id: ID!) { product(id: $id) { variants(first: 1) { nodes { inventoryItem { id } } } } }`, { id: packet.shopifyId });
+    inventoryItemId = data.product && data.product.variants.nodes[0] && data.product.variants.nodes[0].inventoryItem.id;
+  }
+  if (inventoryItemId) await setAvailable(connection, inventoryItemId, quantity);
+  let status = packet.shopifyStatus || 'DRAFT';
+  if (quantity === 0 && status === 'ACTIVE') {
+    const data = await shopifyGraphql(connection,
+      `mutation Unlist($product: ProductUpdateInput!) { productUpdate(product: $product) { product { id status } userErrors { field message } } }`,
+      { product: { id: packet.shopifyId, status: 'DRAFT' } });
+    status = checkUserErrors(data.productUpdate).product.status;
+  }
+  await itemRef.set({ packet: { shopifyQty: quantity, shopifyStatus: status, shopifyInventoryItemId: inventoryItemId || null, shopifySyncedAt: FieldValue.serverTimestamp() } }, { merge: true });
+  return { sku, quantity, status };
+}
+
+// Called by the Vault after a sale or return is recorded there.
+exports.shopifySyncListing = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET], timeoutSeconds: 60 }, logged('shopifySyncListing', async request => {
+  await memberFor(request);
+  const code = vaultSku(request.data && request.data.code);
+  const listing = await listingFor(code);
+  if (!listing) return { synced: false };
+  const connection = await shopifyToken();
+  const result = await syncListingStock(connection, listing.sku);
+  return { synced: true, ...result };
+}));
+
+async function writeSyslog(level, where, msg, detail = '') {
+  try {
+    const now = Date.now();
+    const id = `${String(9e15 - now).padStart(16, '0')}-${crypto.randomBytes(4).toString('hex')}`;
+    await db.doc(`syslog/${id}`).set({ t: new Date(now).toISOString(), level, source: 'backend', where, msg: String(msg).slice(0, 500), detail: String(detail).slice(0, 3000), who: '', email: '', page: '', device: 'Firebase Functions (us-east1)', app: 'functions' });
+  } catch (error) {
+    console.error('Could not write to syslog:', error);
+  }
+}
+
+// Same paged activity log the Vault writes to, attributed to "sys".
+async function appendActivity(entry) {
+  const e = { t: new Date().toISOString(), by: 'sys', uid: '', type: 'SL', code: '', obj: '', detail: '', links: [], from: '', to: '', ...entry };
+  const month = e.t.slice(0, 7).replace('-', '');
+  try {
+    for (let part = 1; part < 40; part++) {
+      const ref = db.doc(`activity/${month}-sys-${part}`);
+      const added = await db.runTransaction(async t => {
+        const snap = await t.get(ref);
+        const list = snap.exists && Array.isArray(snap.data().entries) ? snap.data().entries : [];
+        if (list.length >= 600) return false;
+        t.set(ref, { month, by: 'sys', part, entries: [...list, e] });
+        return true;
+      });
+      if (added) return;
+    }
+  } catch (error) {
+    console.error('Could not append activity:', error);
+  }
+}
+
+// Shopify → Vault: a paid order marks the sold units Sold and books each sale, exactly once.
+exports.shopifyOrderWebhook = onRequest({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET], invoker: 'public', timeoutSeconds: 30 }, async (req, res) => {
+  if (req.method !== 'POST') return res.status(405).send('POST only');
+  if (!orders.validShopifyHmac(req.rawBody, req.get('X-Shopify-Hmac-Sha256'), SHOPIFY_CLIENT_SECRET.value())) {
+    await writeSyslog('warn', 'shopifyOrderWebhook', 'Rejected a webhook with a bad signature.', `topic: ${req.get('X-Shopify-Topic') || '?'}`);
+    return res.status(401).send('Bad signature');
+  }
+  const topic = req.get('X-Shopify-Topic') || '';
+  const order = req.body || {};
+  if (topic !== 'orders/paid' || !order.id) return res.status(200).send('Ignored');
+  if (order.test) return res.status(200).send('Test order ignored');
+
+  try {
+    const settingsSnap = await db.doc('meta/settings').get();
+    const shipFlat = Number(settingsSnap.exists && settingsSnap.data().shipFlat) || 0;
+    const date = orders.orderDate(order);
+    const buyer = orders.buyerName(order);
+    const orderName = String(order.name || order.order_number || order.id);
+
+    const outcome = await db.runTransaction(async t => {
+      // Reads first: the order marker, each listing and its units, then the code counters.
+      const orderRef = db.doc(`shopifyOrders/${order.id}`);
+      if ((await t.get(orderRef)).exists) return { duplicate: true };
+      const lines = [];
+      for (const line of order.line_items || []) {
+        const sku = orders.lineSku(line);
+        const qty = Math.max(0, Number(line.quantity) || 0);
+        if (!sku || !qty) { lines.push({ line, sku, qty, picked: [], reason: sku ? 'no quantity' : 'not a Vault SKU' }); continue; }
+        const mainSnap = await t.get(db.doc(`items/${sku}`));
+        if (!mainSnap.exists) { lines.push({ line, sku, qty, picked: [], reason: 'listing not in the Vault' }); continue; }
+        const main = mainSnap.data();
+        const units = [{ code: sku, ...main }];
+        for (const code of listingUnits(sku, (main.packet || {}).units).filter(c => c !== sku)) {
+          const u = await t.get(db.doc(`items/${code}`));
+          if (u.exists && (!u.data().listedIn || u.data().listedIn === sku)) units.push({ code, ...u.data() });
+        }
+        const taken = new Set(lines.flatMap(l => l.picked));
+        const picked = orders.pickUnits(units.filter(u => !taken.has(u.code)), qty);
+        lines.push({ line, sku, qty, picked, units, main, reason: picked.length < qty ? `only ${picked.length} of ${qty} in stock` : '' });
+      }
+      const soldCount = lines.reduce((n, l) => n + l.picked.length, 0);
+      const counters = {};
+      if (soldCount) for (const k of ['SL', 'TX']) { const c = await t.get(db.doc(`counters/${k}`)); counters[k] = c.exists ? Number(c.data().n) || 0 : 0; }
+
+      // Writes.
+      const now = new Date().toISOString();
+      const sales = [];
+      for (const l of lines) {
+        const price = orders.unitPrice(l.line);
+        const fees = orders.shopifyFee(price);
+        for (const code of l.picked) {
+          const unit = l.units.find(u => u.code === code);
+          const sl = `SL-${String(++counters.SL).padStart(4, '0')}`;
+          const tx = `TX-${String(++counters.TX).padStart(4, '0')}`;
+          const net = +(price - fees - shipFlat).toFixed(2);
+          const profit = +(net - (Number(unit.cost) || 0)).toFixed(2);
+          const sale = { code: sl, txCode: tx, channel: 'Shopify', price, fees, ship: shipFlat, date, order: orderName, tracking: '', buyer };
+          t.set(db.doc(`sales/${sl}`), { ...sale, item: code, net, profit, by: 'sys', shopifyOrderId: String(order.id), createdAt: now });
+          t.set(db.doc(`items/${code}`), { status: 'sold', sale, updatedAt: now, updatedBy: 'sys' }, { merge: true });
+          t.set(db.doc(`txs/${tx}`), { code: tx, date, desc: `Sale ${sl} · ${unit.title || code}`, amount: net, category: 'Sales', method: 'Payout', by: 'sys', payee: buyer, ref: orderName, link: sl, tags: 'Shopify', notes: `Shopify order ${orderName}: price ${price.toFixed(2)} − fees ${fees.toFixed(2)} − shipping ${shipFlat.toFixed(2)}`, createdAt: now });
+          sales.push({ sl, tx, code, title: unit.title || code, price, profit, listing: l.sku, from: unit.status });
+        }
+      }
+      // Remaining stock per listing, counting every line of this order.
+      const allPicked = new Set(lines.flatMap(l => l.picked));
+      for (const sku of new Set(lines.filter(l => l.picked.length).map(l => l.sku))) {
+        const l = lines.find(x => x.sku === sku && x.units);
+        const left = l.units.filter(u => orders.IN_STOCK.has(u.status) && !allPicked.has(u.code)).length;
+        t.set(db.doc(`items/${sku}`), { packet: { shopifyQty: left } }, { merge: true });
+      }
+      if (soldCount) for (const k of ['SL', 'TX']) t.set(db.doc(`counters/${k}`), { n: counters[k] });
+      const problems = lines.filter(l => l.reason).map(l => ({ sku: l.sku || String(l.line.sku || ''), title: String(l.line.title || ''), qty: l.qty, reason: l.reason }));
+      t.set(orderRef, { name: orderName, date, buyer, sales: sales.map(x => x.sl), items: sales.map(x => x.code), problems, receivedAt: now });
+      return { sales, problems };
+    });
+
+    if (outcome.duplicate) return res.status(200).send('Already recorded');
+    for (const x of outcome.sales) {
+      await appendActivity({ verb: 'recorded Shopify sale', code: x.sl, obj: x.title, detail: `Shopify ${orderName} · $${x.price.toFixed(2)} · net $${x.profit.toFixed(2)}`, links: [x.code, x.tx], from: x.from, to: 'Sold' });
+    }
+    if (outcome.problems.length) {
+      await writeSyslog('warn', 'shopifyOrderWebhook', `Shopify order ${orderName}: ${outcome.problems.length} line(s) not matched to Vault stock.`, outcome.problems.map(p => `${p.sku || '(no SKU)'} ${p.title} ×${p.qty}: ${p.reason}`).join('\n'));
+    }
+    return res.status(200).send(`Recorded ${outcome.sales.length} sale(s)`);
+  } catch (error) {
+    console.error('shopifyOrderWebhook failed:', error);
+    await logServerError('shopifyOrderWebhook', error, null);
+    return res.status(500).send('Error'); // Shopify retries; the order marker keeps it exactly-once
+  }
+});
+
+// Settings button: subscribes the store's paid orders to the webhook above.
+exports.shopifyConnectOrders = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET], timeoutSeconds: 60 }, logged('shopifyConnectOrders', async request => {
+  await ownerFor(request);
+  const project = process.env.GCLOUD_PROJECT || JSON.parse(process.env.FIREBASE_CONFIG || '{}').projectId;
+  const uri = `https://us-east1-${project}.cloudfunctions.net/shopifyOrderWebhook`;
+  const connection = await shopifyToken();
+  const existing = await shopifyGraphql(connection,
+    `query Hooks { webhookSubscriptions(first: 50, topics: [ORDERS_PAID]) { nodes { id uri } } }`);
+  if (existing.webhookSubscriptions.nodes.some(n => n.uri === uri)) return { connected: true, uri, already: true };
+  const data = await shopifyGraphql(connection,
+    `mutation Subscribe($topic: WebhookSubscriptionTopic!, $sub: WebhookSubscriptionInput!) { webhookSubscriptionCreate(topic: $topic, webhookSubscription: $sub) { webhookSubscription { id uri } userErrors { field message } } }`,
+    { topic: 'ORDERS_PAID', sub: { uri, format: 'JSON' } });
+  checkUserErrors(data.webhookSubscriptionCreate);
+  return { connected: true, uri };
 }));

@@ -67,7 +67,22 @@ With Firebase Functions deployed, Settings can switch Shopify to **Create Shopif
 2. **Create Shopify draft:** creates an unpublished product (SKU = the Vault code, e.g. `VR-00001`), sets Shopify's quantity to the number of units, and opens the product in a new tab.
 3. **Activate Shopify listing:** switches the Shopify product from Draft to Active and, once Shopify confirms, moves every unit in the listing to **Listed** in the Vault.
 
-**Update Shopify draft / listing** re-syncs title, price, photos and quantity at any time. Configure the `SHOPIFY_SHOP`, `SHOPIFY_CLIENT_ID`, and `SHOPIFY_CLIENT_SECRET` Firebase secrets; never put them in `config.js` or Firestore. The Shopify app needs `write_products` and `write_inventory` access.
+**Update Shopify draft / listing** re-syncs title, price, photos and quantity at any time.
+
+### Sales sync
+- **Vault → Shopify:** recording a sale or a return in the Vault resets Shopify's quantity to the units still in stock. At zero the product goes back to Draft so it leaves the store.
+- **Shopify → Vault:** press **Settings → Shopify → Connect Shopify orders** once. Every paid Shopify order then marks the sold units **Sold**, books each sale (price after discounts, Shopify fee 2.9% + $0.30, your flat shipping) with its bookkeeping entry, and logs it in Activity. Each order is recorded exactly once, even if Shopify sends it twice. Lines without a Vault SKU, or with more quantity than is in stock, show up in Settings → System log.
+- The Shopify app needs the **`read_orders`** scope for this (in addition to `write_products` and `write_inventory`). After adding it, release a new app version and approve it in the store.
+- The webhook function `shopifyOrderWebhook` must allow public access (Cloud Run → service → Security), like the other functions. It only accepts requests signed with the app's client secret. Configure the `SHOPIFY_SHOP`, `SHOPIFY_CLIENT_ID`, and `SHOPIFY_CLIENT_SECRET` Firebase secrets; never put them in `config.js` or Firestore. The Shopify app needs `write_products` and `write_inventory` access.
+
+## Database rules
+
+`firestore.rules` gives every vault account two levels:
+- **Members** read and add/edit records (intake, sales, packets, photos, bookkeeping entries) and can report errors to the system log.
+- **Owners** (the two bootstrap emails, or accounts added with the Owner role) can also delete records, change settings and PINs, set counters from a backup, and read or clear the system log.
+- Record codes can't be changed or skipped, the activity log can only grow, member accounts and Shopify order records are written only by the backend, and any collection not listed is closed.
+
+`tests/rules.test.mjs` checks all of this in the Firestore emulator. The GitHub deploy workflow runs it first and stops if any check fails.
 
 ## System log (developer maintenance)
 

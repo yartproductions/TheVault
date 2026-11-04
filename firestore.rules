@@ -1,30 +1,131 @@
 rules_version = '2';
-// Only the vault accounts listed below can read or write anything.
-// Replace the two emails with the accounts you create in Firebase → Authentication → Users.
+// Obsidian Vault database rules.
+//
+// Who can do what:
+//   Vault users (owners + active members) can read records and add or edit them.
+//   Only owners can delete records, change settings or PINs, and read or clear the system log.
+//   Member accounts and Shopify order records are written only by the Firebase Functions backend.
+//   Any collection not listed here is closed.
+//
+// The two bootstrap owner emails keep the original owners from ever being locked out.
+// Keep them identical to BOOTSTRAP_OWNERS in functions/index.js and to storage.rules.
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
     function isBootstrapOwner() {
-      return request.auth != null
+      return signedIn()
         && request.auth.token.email in ['paulckinckay@gmail.com', 'kohlindersjohn@gmail.com'];
     }
+    function memberPath() {
+      return /databases/$(database)/documents/members/$(request.auth.uid);
+    }
     function isMember() {
-      return request.auth != null
-        && exists(/databases/$(database)/documents/members/$(request.auth.uid))
-        && get(/databases/$(database)/documents/members/$(request.auth.uid)).data.active == true;
+      return signedIn() && exists(memberPath()) && get(memberPath()).data.active == true;
     }
     function isVaultUser() {
       return isBootstrapOwner() || isMember();
     }
+    function isOwner() {
+      return isBootstrapOwner() || (isMember() && get(memberPath()).data.role == 'owner');
+    }
+    // A record write must stay a reasonable size and must not change its permanent code.
+    function keepsCode() {
+      return resource == null
+        || !('code' in resource.data)
+        || request.resource.data.get('code', null) == resource.data.code;
+    }
 
+    // ── business records: everyone adds and edits, owners delete ──
+    match /items/{id} {
+      allow read: if isVaultUser();
+      allow create, update: if isVaultUser() && keepsCode();
+      allow delete: if isOwner();
+    }
+    match /customers/{id} {
+      allow read: if isVaultUser();
+      allow create, update: if isVaultUser() && keepsCode();
+      allow delete: if isOwner();
+    }
+    match /purchases/{id} {
+      allow read: if isVaultUser();
+      allow create, update: if isVaultUser() && keepsCode();
+      allow delete: if isOwner();
+    }
+    match /sales/{id} {
+      allow read: if isVaultUser();
+      allow create, update: if isVaultUser() && keepsCode();
+      allow delete: if isOwner();
+    }
+    match /txs/{id} {
+      allow read: if isVaultUser();
+      allow create, update: if isVaultUser() && keepsCode();
+      allow delete: if isOwner();
+    }
+
+    // ── activity log: members can only append entries; owners can do anything ──
+    match /activity/{id} {
+      allow read: if isVaultUser();
+      allow create: if isVaultUser();
+      allow update: if isOwner()
+        || (isVaultUser()
+          && request.resource.data.entries is list
+          && request.resource.data.entries.size() > resource.data.get('entries', []).size());
+      allow delete: if isOwner();
+    }
+
+    // ── record-code counters: members can only take the next number ──
+    match /counters/{name} {
+      allow read: if isVaultUser();
+      allow create: if isVaultUser()
+        && request.resource.data.keys().hasOnly(['n'])
+        && request.resource.data.n is int
+        && (request.resource.data.n == 1 || (isOwner() && request.resource.data.n > 0));
+      allow update: if isVaultUser()
+        && request.resource.data.keys().hasOnly(['n'])
+        && request.resource.data.n is int
+        && (request.resource.data.n == resource.data.n + 1
+          || (isOwner() && request.resource.data.n > resource.data.n));
+      allow delete: if false;
+    }
+
+    // ── settings and PINs: everyone reads, owners change ──
+    match /meta/{doc} {
+      allow read: if isVaultUser();
+      allow write: if isOwner();
+    }
+
+    // ── listing photos (free-plan photo storage): part of packet editing ──
+    match /photos/{id} {
+      allow read, create, delete: if isVaultUser();
+      allow update: if false;
+    }
+
+    // ── system log: anyone can report an error; only owners read or clear it ──
+    match /syslog/{id} {
+      allow create: if isVaultUser()
+        && request.resource.data.keys().hasOnly(['t', 'level', 'source', 'where', 'msg', 'detail', 'who', 'email', 'page', 'device', 'app'])
+        && request.resource.data.level in ['error', 'warn', 'info']
+        && request.resource.data.msg is string && request.resource.data.msg.size() <= 600
+        && request.resource.data.detail is string && request.resource.data.detail.size() <= 4000;
+      allow read, delete: if isOwner();
+      allow update: if false;
+    }
+
+    // ── backend-only collections ──
     match /members/{uid} {
       allow read: if isVaultUser();
       allow write: if false;
     }
-    match /{collection}/{document} {
-      allow read, write: if collection != 'members' && isVaultUser();
+    match /shopifyOrders/{id} {
+      allow read: if isOwner();
+      allow write: if false;
     }
-    match /{collection}/{document}/{nested=**} {
-      allow read, write: if isVaultUser();
+
+    // Everything else is closed.
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

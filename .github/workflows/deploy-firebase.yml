@@ -11,6 +11,7 @@ on:
       - 'firestore.rules'
       - 'storage.rules'
       - 'firebase.json'
+      - 'tests/**'
       - '.github/workflows/deploy-firebase.yml'
   workflow_dispatch:
 
@@ -32,6 +33,16 @@ jobs:
         run: |
           npm install --prefix functions
           npm test --prefix functions
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Test database rules in the emulator
+        run: |
+          npm install --no-save --prefix tests @firebase/rules-unit-testing@4 firebase@11
+          npx --yes firebase-tools@latest emulators:exec --only firestore --project demo-vault "node tests/rules.test.mjs"
 
       - name: Check the deploy key is set
         env:
