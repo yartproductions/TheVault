@@ -69,3 +69,38 @@ test('eBay challenge response is sha256(code + token + endpoint)', () => {
   const expected = crypto.createHash('sha256').update('abc' + 'tok' + 'https://x/y').digest('hex');
   assert.equal(m.ebayChallengeResponse('abc', 'tok', 'https://x/y'), expected);
 });
+
+test('junk titles are dropped (parts listings keep broken phones)', () => {
+  assert.equal(m.junkTitle('Apple iPhone 14 Pro 128GB Unlocked Deep Purple', 'used'), false);
+  assert.equal(m.junkTitle('Clear Case for iPhone 14 Pro', 'used'), true);
+  assert.equal(m.junkTitle('iPhone 14 Pro 128GB iCloud Locked for parts', 'used'), true);
+  assert.equal(m.junkTitle('iPhone 14 Pro 128GB cracked screen for parts', 'parts'), false);
+  assert.equal(m.junkTitle('iPhone 14 Pro box only', 'parts'), true);
+});
+
+test('picks the eBay Model value that matches the Vault title', () => {
+  const dist = [
+    { localizedAspectName: 'Model', aspectValueDistributions: [
+      { localizedAspectValue: 'Apple iPhone 14 Pro Max', matchCount: 900 },
+      { localizedAspectValue: 'Apple iPhone 14 Pro', matchCount: 700 },
+      { localizedAspectValue: 'Apple iPhone 14', matchCount: 1200 },
+      { localizedAspectValue: 'Unknown', matchCount: 50 }] },
+    { localizedAspectName: 'Storage Capacity', aspectValueDistributions: [
+      { localizedAspectValue: '256 GB', matchCount: 400 }, { localizedAspectValue: '128 GB', matchCount: 500 }] },
+    { localizedAspectName: 'Network', aspectValueDistributions: [
+      { localizedAspectValue: 'Unlocked', matchCount: 800 }, { localizedAspectValue: 'Verizon', matchCount: 200 }] }
+  ];
+  assert.equal(m.pickAspect(dist, /^model$/i, 'Apple iPhone 14 Pro').value, 'Apple iPhone 14 Pro');
+  assert.equal(m.pickAspect(dist, /^model$/i, 'Apple iPhone 14 Pro Max 256').value, 'Apple iPhone 14 Pro Max');
+  assert.equal(m.pickAspect(dist, /^model$/i, 'iPhone 14').value, '');
+  assert.ok(!m.pickAspect(dist, /^model$/i, 'x').options.includes('Unknown'));
+  assert.equal(m.pickStorage(dist, '128GB · Black', '').value, '128 GB');
+  assert.equal(m.pickNetwork(dist, '128GB Unlocked').value, 'Unlocked');
+  assert.equal(m.pickNetwork(dist, '128GB').value, '');
+});
+
+test('aspect filter escapes values and names the category', () => {
+  assert.equal(m.aspectFilter('9355', { model: 'Apple iPhone 14 Pro', storage: '128 GB' }), 'categoryId:9355,Model:{Apple iPhone 14 Pro},Storage Capacity:{128 GB}');
+  assert.equal(m.aspectFilter('9355', { model: 'A|B' }), 'categoryId:9355,Model:{A\\|B}');
+  assert.equal(m.aspectFilter('', { model: 'x' }), '');
+});

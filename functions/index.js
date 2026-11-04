@@ -559,31 +559,71 @@ async function ebayToken() {
   return ebayCachedToken.token;
 }
 
-async function ebaySearchAll(token, query, category, group) {
+async function ebayGet(token, params) {
+  const response = await fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?${params}`, {
+    headers: { Authorization: `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' }
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const msg = (json.errors && json.errors[0] && (json.errors[0].longMessage || json.errors[0].message)) || `HTTP ${response.status}`;
+    throw new Error(`eBay search failed: ${msg}`);
+  }
+  return json;
+}
+
+function searchParams(doc, extra = {}) {
+  const match = doc.match || {};
+  const aspects = market.aspectFilter(doc.category, match);
+  const params = new URLSearchParams({ q: (match.model && aspects ? match.model : doc.query).slice(0, 100), filter: market.ebayFilter(doc.group), ...extra });
+  if (doc.category) params.set('category_ids', doc.category);
+  if (aspects) params.set('aspect_filter', aspects);
+  return { params, exact: !!(aspects && match.model) };
+}
+
+async function ebaySearchAll(token, doc) {
   const ids = [];
-  const prices = [];
+  const listings = [];
   let total = 0;
+  let junk = 0;
+  let seen = 0;
+  const { exact } = searchParams(doc);
   for (let page = 0; page < MARKET_MAX_PAGES; page++) {
-    const params = new URLSearchParams({ q: query, filter: market.ebayFilter(group), limit: '200', offset: String(page * 200) });
-    if (category) params.set('category_ids', category);
-    const response = await fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?${params}`, {
-      headers: { Authorization: `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' }
-    });
-    const json = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const msg = (json.errors && json.errors[0] && (json.errors[0].longMessage || json.errors[0].message)) || `HTTP ${response.status}`;
-      throw new Error(`eBay search failed: ${msg}`);
-    }
+    const json = await ebayGet(token, searchParams(doc, { limit: '200', offset: String(page * 200) }).params);
     total = Number(json.total) || 0;
     for (const s of json.itemSummaries || []) {
+      seen++;
+      if (market.junkTitle(s.title, doc.group)) { junk++; continue; }
       if (s.itemId) ids.push(s.itemId);
       const p = market.landedPrice(s);
-      if (p != null) prices.push(p);
+      if (p != null) listings.push({ id: s.itemId, title: String(s.title || '').slice(0, 120), price: p, url: s.itemWebUrl || '' });
     }
-    if (!json.itemSummaries || json.itemSummaries.length < 200 || ids.length >= total) break;
+    if (!json.itemSummaries || json.itemSummaries.length < 200 || seen >= total) break;
   }
-  return { total, ids, prices, complete: ids.length >= total };
+  return { total: Math.max(0, total - junk), ids, listings, junk, exact, complete: seen >= total };
 }
+
+// Finds eBay's own Brand / Model / Storage / Network values for a model, from one search
+// that returns how eBay's listings are spread across those item specifics.
+async function resolveMatch(token, doc) {
+  if (!doc.category) return { source: 'auto', at: new Date().toISOString(), model: '', options: {} };
+  const params = new URLSearchParams({ q: doc.query.slice(0, 100), filter: market.ebayFilter(doc.group), category_ids: doc.category, fieldgroups: 'ASPECT_REFINEMENTS', limit: '1' });
+  const json = await ebayGet(token, params);
+  const dist = (json.refinement && json.refinement.aspectDistributions) || [];
+  const title = doc.title || doc.query;
+  const brand = market.pickAspect(dist, /^brand$/i, title);
+  const model = market.pickAspect(dist, /^model$/i, title);
+  const storage = market.pickStorage(dist, doc.specs || '', title);
+  const network = market.pickNetwork(dist, doc.specs || '');
+  const nameOf = re => ((dist.find(a => re.test(String(a.localizedAspectName || ''))) || {}).localizedAspectName) || '';
+  return {
+    source: 'auto', at: new Date().toISOString(),
+    brand: brand.value, model: model.value, storage: storage.value, network: network.value,
+    storageName: nameOf(/storage capacity|^storage$/i) || 'Storage Capacity', networkName: nameOf(/^network$|carrier/i) || 'Network',
+    options: { model: model.options, storage: storage.options, network: network.options }
+  };
+}
+
+const matchSig = match => JSON.stringify([match && match.brand, match && match.model, match && match.storage, match && match.network]);
 
 // Builds the watch list from what is in stock: one model per title + storage + condition group.
 async function refreshAutoWatchlist() {
@@ -593,13 +633,13 @@ async function refreshAutoWatchlist() {
     const it = d.data();
     const key = market.marketKey(it.title, it.specs, it.condition);
     if (!key) return;
-    const entry = seen.get(key) || { key, label: market.marketQuery(it.title, it.specs), query: market.marketQuery(it.title, it.specs), group: market.condGroup(it.condition), category: market.ebayCategory(it.category, it.title), codes: [] };
+    const entry = seen.get(key) || { key, label: market.marketQuery(it.title, it.specs), query: market.marketQuery(it.title, it.specs), title: String(it.title || ''), specs: String(it.specs || ''), group: market.condGroup(it.condition), category: market.ebayCategory(it.category, it.title), codes: [] };
     entry.codes.push(d.id);
     seen.set(key, entry);
   });
   const batch = db.batch();
   for (const e of [...seen.values()].slice(0, MARKET_MAX_MODELS)) {
-    batch.set(db.doc(`market/${e.key}`), { key: e.key, label: e.label, query: e.query, group: e.group, category: e.category, codes: e.codes.sort(), auto: true, active: true }, { merge: true });
+    batch.set(db.doc(`market/${e.key}`), { key: e.key, label: e.label, query: e.query, title: e.title, specs: e.specs, group: e.group, category: e.category, codes: e.codes.sort(), auto: true, active: true }, { merge: true });
   }
   await batch.commit();
 }
@@ -607,15 +647,23 @@ async function refreshAutoWatchlist() {
 async function collectModel(token, ref, doc) {
   const now = new Date().toISOString();
   try {
-    const result = await ebaySearchAll(token, doc.query, doc.category, doc.group);
-    const stats = market.priceStats(result.prices);
-    const canDiff = result.complete && doc.lastComplete && Array.isArray(doc.ids);
+    let match = doc.match;
+    const stale = !match || (match.source !== 'manual' && Date.now() - Date.parse(match.at || 0) > 14 * 864e5);
+    if (stale) match = await resolveMatch(token, doc);
+    const sig = matchSig(match);
+    const result = await ebaySearchAll(token, { ...doc, match });
+    const stats = market.priceStats(result.listings.map(l => l.price));
+    // A changed match means a different set of listings: skip one diff instead of counting false "sales".
+    const canDiff = result.complete && doc.lastComplete && Array.isArray(doc.ids) && doc.matchSig === sig;
     const diff = canDiff ? market.diffListings(doc.ids, result.ids) : { gone: null, added: null };
     const point = { t: now, total: result.total, median: stats.median, p25: stats.p25, gone: diff.gone, added: diff.added };
     const history = [...(doc.history || []), point].slice(-MARKET_HISTORY);
+    // A few listings around the median, so people can see what the model was matched to.
+    const sample = stats.median ? [...result.listings].sort((a, b) => Math.abs(a.price - stats.median) - Math.abs(b.price - stats.median)).slice(0, 5) : [];
     await ref.set({
-      last: { t: now, total: result.total, priced: stats.n, low: stats.low, p25: stats.p25, median: stats.median, p75: stats.p75, high: stats.high, gone: diff.gone, added: diff.added, complete: result.complete },
-      history,
+      match, matchSig: sig,
+      last: { t: now, total: result.total, priced: stats.n, low: stats.low, p25: stats.p25, median: stats.median, p75: stats.p75, high: stats.high, gone: diff.gone, added: diff.added, complete: result.complete, exact: result.exact, junk: result.junk },
+      sample, history,
       perWeek: market.weeklyGone(history),
       ids: result.complete ? result.ids : FieldValue.delete(),
       lastComplete: result.complete,
@@ -676,10 +724,31 @@ exports.ebayMarketWatch = onCall({ secrets: EBAY_SECRETS, timeoutSeconds: 120 },
   const count = (await db.collection('market').where('active', '==', true).get()).size;
   if (count >= MARKET_MAX_MODELS) throw new HttpsError('resource-exhausted', `Watching ${MARKET_MAX_MODELS} models already. Remove one first.`);
   const ref = db.doc(`market/${key}`);
-  await ref.set({ key, label: query, query, group: market.condGroup(condition), category: market.ebayCategory(String(data.category || ''), title), auto: false, active: true, addedAt: new Date().toISOString() }, { merge: true });
+  await ref.set({ key, label: query, query, title, specs: String(data.specs || ''), group: market.condGroup(condition), category: market.ebayCategory(String(data.category || ''), title), auto: false, active: true, addedAt: new Date().toISOString() }, { merge: true });
   const token = await ebayToken();
   const snap = await ref.get();
   const result = await collectModel(token, ref, snap.data());
+  return { key, ...result };
+}));
+
+// Fix how a model is matched on eBay (choose eBay's Model / Storage / Network), or go back to automatic.
+exports.ebayMarketMatch = onCall({ secrets: EBAY_SECRETS, timeoutSeconds: 120 }, logged('ebayMarketMatch', async request => {
+  await memberFor(request);
+  const data = request.data || {};
+  const key = String(data.key || '');
+  const ref = db.doc(`market/${key}`);
+  const snap = await ref.get();
+  if (!key || !snap.exists) throw new HttpsError('not-found', 'Model not found.');
+  const doc = snap.data();
+  const token = await ebayToken();
+  let match;
+  if (data.reset) match = await resolveMatch(token, doc);
+  else {
+    const clean = v => String(v || '').trim().slice(0, 80);
+    match = { ...(doc.match || {}), model: clean(data.model), storage: clean(data.storage), network: clean(data.network), source: 'manual', at: new Date().toISOString() };
+  }
+  await ref.set({ match }, { merge: true });
+  const result = await collectModel(token, ref, { ...doc, match });
   return { key, ...result };
 }));
 

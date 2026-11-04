@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Obsidian Vault</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<script src="config.js?v=market-confidence-20261104"></script>
+<script src="config.js?v=market-match-20261104"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -865,7 +865,7 @@ function pIntake() {
       ${N.flash ? `<span class="sm" style="color:#5FE6AC;display:inline-flex;align-items:center;gap:6px">${ic('check', 14, 2.4)}${esc(N.flash)}</span>` : '<span class="sm mut2">Press Enter to add</span>'}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap" role="radiogroup" aria-label="Category">${Object.keys(CATS).map(c => `<button class="fchip" style="${f.category === c ? 'border-color:#3DDC97;color:var(--tx);background:#12241D' : ''}" data-act="inCat" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>
     <input class="in" id="n-title" data-bind="ui.intake.f.title" data-enter="inAdd" value="${esc(f.title)}" placeholder="Brand & model — e.g. Apple iPhone 14 Pro" aria-label="Brand and model" style="height:52px;font-size:17px;font-weight:500">
-    <div class="grid g2 stack" style="gap:12px"><input class="in" id="n-specs" data-bind="ui.intake.f.specs" data-enter="inAdd" value="${esc(f.specs)}" placeholder="Storage / color · 128GB Midnight" aria-label="Storage, color, specs">
+    <div class="grid g2 stack" style="gap:12px"><input class="in" id="n-specs" data-bind="ui.intake.f.specs" data-enter="inAdd" value="${esc(f.specs)}" placeholder="Storage · carrier · color — 128GB Unlocked Midnight" aria-label="Storage, carrier, color, specs">
       <input class="in mono" id="n-serial" data-bind="ui.intake.f.serial" data-enter="inAdd" value="${esc(f.serial)}" placeholder="Serial / IMEI (optional)" aria-label="Serial or IMEI"></div>
     <div class="seg" role="radiogroup" aria-label="Condition">${Object.entries(CONDS).map(([c, col]) => `<button class="${f.condition === c ? 'on' : ''}" data-act="inCond" data-v="${c}"><i class="cd" style="background:${col}"></i>${c}</button>`).join('')}</div>
     <textarea class="ta" id="n-defect" data-bind="ui.intake.f.defect" rows="2" placeholder="Defects in plain English — scratches, battery health, anything not working (or “None found”)" aria-label="Defect description" style="height:auto;padding:11px 13px">${esc(f.defect)}</textarea>
@@ -998,10 +998,11 @@ const stat = (label, value, sub, src) => `<div class="card pad-s" style="backgro
 // Rework the score here: each rule gives 0–1, times its weight (weights add up to 100).
 // `full` is where a rule earns all its points, `zero` where it earns none (linear in between).
 const CONFIDENCE_RULES = [
-  { id: 'listings', label: 'Enough listings to compare', weight: 25, full: 30, zero: 3, value: (d) => (d.last || {}).priced ?? (d.last || {}).total ?? 0, show: v => `${v} priced listings` },
-  { id: 'spread', label: 'Prices agree with each other', weight: 25, full: 0.10, zero: 0.50, value: (d) => { const l = d.last || {}; return l.median > 0 ? (l.p75 - l.p25) / l.median : 1; }, show: v => `middle half spans ${Math.round(v * 100)}% of the median` },
+  { id: 'match', label: 'Exact eBay match', weight: 15, full: 1, zero: 0, value: (d) => (d.last || {}).exact ? 1 : 0, show: v => v ? 'matched on eBay item specifics' : 'keyword search only' },
+  { id: 'listings', label: 'Enough listings to compare', weight: 20, full: 30, zero: 3, value: (d) => (d.last || {}).priced ?? (d.last || {}).total ?? 0, show: v => `${v} priced listings` },
+  { id: 'spread', label: 'Prices agree with each other', weight: 20, full: 0.10, zero: 0.50, value: (d) => { const l = d.last || {}; return l.median > 0 ? (l.p75 - l.p25) / l.median : 1; }, show: v => `middle half spans ${Math.round(v * 100)}% of the median` },
   { id: 'history', label: 'Watched long enough', weight: 20, full: 8, zero: 0, value: (d) => (d.history || []).filter(h => h.gone != null && Date.now() - Date.parse(h.t) < 14 * 864e5).length, show: v => `${v} complete snapshots in 14 days` },
-  { id: 'fresh', label: 'Recently checked', weight: 15, full: 12, zero: 72, value: (d) => (d.last || {}).t ? (Date.now() - Date.parse(d.last.t)) / 36e5 : 999, show: v => v > 900 ? 'never checked' : `${Math.round(v)} h old` },
+  { id: 'fresh', label: 'Recently checked', weight: 10, full: 12, zero: 72, value: (d) => (d.last || {}).t ? (Date.now() - Date.parse(d.last.t)) / 36e5 : 999, show: v => v > 900 ? 'never checked' : `${Math.round(v)} h old` },
   { id: 'yours', label: 'Backed by your own sales', weight: 15, full: 3, zero: 0, value: (d) => vaultModelStats(d.key).sold, show: v => `${v} of yours sold` }
 ];
 const CONFIDENCE_LEVELS = [[75, 'High', '#3DDC97'], [50, 'Medium', '#F2C063'], [0, 'Low', '#F2A08A']];
@@ -1024,6 +1025,24 @@ function confidenceMeter(c, big) {
 function confidenceWhy(c) {
   if (!c) return '';
   return `<details style="font-size:12px"><summary class="mut2" style="cursor:pointer">Why this confidence?</summary><div style="display:flex;flex-direction:column;gap:4px;margin-top:8px">${c.parts.map(p => `<div style="display:flex;justify-content:space-between;gap:10px"><span class="mut">${p.label} <span class="mut2">· ${esc(p.detail)}</span></span><span class="mono">${p.points}/${p.weight}</span></div>`).join('')}</div></details>`;
+}
+// How a model is matched on eBay, with a way to fix it and a peek at the listings it matched.
+function matchPanel(d, M) {
+  const m = d.match || {}; const l = d.last || {};
+  const chip = (v, ph) => `<span class="mono" style="font-size:12px;padding:3px 9px;border-radius:7px;background:${v ? '#16302A' : '#1F2725'};color:${v ? '#9EE7BC' : '#7E8C86'}">${esc(v || ph)}</span>`;
+  const editing = M.fix && M.fix.key === d.key;
+  const opts = (list, cur) => [...new Set([cur, ...(list || [])].filter(Boolean))];
+  const sel = (field, label, list) => `<label class="fld" style="flex:1 1 180px"><span class="sm mut2">${label}</span><select class="sel" data-bind="ui.market.fix.${field}"><option value="">Any</option>${opts(list, M.fix[field]).map(v => `<option ${M.fix[field] === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>`;
+  return `<div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:10px">
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="sm mut">Matched on eBay as</span>${chip(m.brand, 'any brand')}${chip(m.model, 'model not matched')}${chip(m.storage, 'any storage')}${chip(m.network, 'any network')}
+        ${l.t ? (l.exact ? `<span class="sm" style="color:#5FE6AC">✓ exact match</span>` : `<span class="sm" style="color:#F2C063">⚠ keyword search — fix the match for better data</span>`) : ''}${m.source === 'manual' ? '<span class="sm mut2">· set by you</span>' : ''}${l.junk ? `<span class="sm mut2">· ${l.junk} accessories/junk filtered out</span>` : ''}</div>
+      ${editing ? '' : `<button class="btn sm" data-act="mkFix" data-key="${esc(d.key)}">Fix match</button>`}</div>
+    ${editing ? `<div class="acts" style="align-items:flex-end">${sel('model', 'eBay model', (m.options || {}).model)}${sel('storage', 'Storage', (m.options || {}).storage)}${sel('network', 'Network / carrier', (m.options || {}).network)}
+      <button class="btn pri" data-act="mkFixSave" ${M.busy ? 'disabled' : ''}>${M.busy === 'fix' ? 'Saving…' : 'Save & re-check'}</button><button class="btn" data-act="mkFixAuto" ${M.busy ? 'disabled' : ''}>Back to automatic</button><button class="btn" data-act="mkFixCancel">Cancel</button></div>
+      <div class="sm mut2">Choices come from eBay's own item specifics for this search. "Any" leaves that detail out.</div>` : ''}
+    ${(d.sample || []).length ? `<details><summary class="sm mut2" style="cursor:pointer">See ${d.sample.length} listings it matched, near the median</summary><div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">${d.sample.map(x => `<div style="display:flex;justify-content:space-between;gap:12px;font-size:13px"><a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.title)}</a><span class="mono">${money(x.price)}</span></div>`).join('')}</div></details>` : ''}
+  </div>`;
 }
 function pMarket() {
   const live = S.mode === 'firebase' && S.fb;
@@ -1070,6 +1089,7 @@ function pMarket() {
             <div class="sm mut2" style="margin-top:3px">${d.group === 'parts' ? 'For parts' : 'Used'} · ${sd.weeks != null ? `about <b style="color:var(--tx)">${sd.weeks < 1 ? 'under a week' : Math.round(sd.weeks) + ' week' + (Math.round(sd.weeks) === 1 ? '' : 's')}</b> of supply — ${sd.note}` : sd.note}${l.t ? ` · checked ${agoText(l.t)}` : ''}</div></div></div>
         <div class="acts">${sparkline(d)}<button class="btn sm" data-act="mkRefresh" data-key="${esc(d.key)}" ${M.busy ? 'disabled' : ''}>${M.busy === d.key ? 'Checking…' : 'Check now'}</button>${!d.auto ? `<button class="btn sm" data-act="mkRemove" data-key="${esc(d.key)}">Stop watching</button>` : ''}</div></div>
       ${d.error ? `<div class="notice bad"><div><b>Couldn't check eBay:</b> ${esc(d.error)}</div></div>` : ''}
+      ${matchPanel(d, M)}
       ${sp ? `<div class="glow" style="padding:14px 16px;display:flex;gap:16px;flex-wrap:wrap;align-items:center;justify-content:space-between">
         <div><div class="sm" style="color:#9EE7BC">Suggested asking price (shipping included)</div><div style="display:flex;gap:18px;align-items:baseline;margin-top:4px;flex-wrap:wrap"><span><span class="mono" style="font-size:26px;color:#5FE6AC">${money(sp.fast)}</span> <span class="sm mut">to sell fast</span></span><span><span class="mono" style="font-size:18px;color:#8EC3FF">${money(sp.max)}</span> <span class="sm mut">for max profit</span></span></div></div>
         <div style="display:flex;flex-direction:column;gap:4px"><span class="sm mut2">Confidence in this price</span>${confidenceMeter(conf, true)}</div>
@@ -1656,6 +1676,20 @@ const ACT = {
   actType: el => { S.ui.act.type = el.dataset.v; render(); },
   actWho: el => { S.ui.act.who = el.dataset.v; render(); },
   // settings
+  mkFix: el => { const d = S.market[el.dataset.key] || {}; const m = d.match || {}; S.ui.market.fix = { key: el.dataset.key, model: m.model || '', storage: m.storage || '', network: m.network || '' }; render(); },
+  mkFixCancel: () => { S.ui.market.fix = null; render(); },
+  mkFixSave: async () => {
+    const M = S.ui.market; const f = M.fix; if (!f) return; M.busy = 'fix'; render();
+    try { await S.fb.call('ebayMarketMatch', { key: f.key, model: f.model, storage: f.storage, network: f.network }); M.fix = null; toast('Match saved and eBay re-checked.'); }
+    catch (e) { toast((e && e.message) || 'Could not save the match.', 'err'); }
+    finally { M.busy = ''; render(); }
+  },
+  mkFixAuto: async () => {
+    const M = S.ui.market; const f = M.fix; if (!f) return; M.busy = 'fix'; render();
+    try { await S.fb.call('ebayMarketMatch', { key: f.key, reset: true }); M.fix = null; toast('Back to automatic matching.'); }
+    catch (e) { toast((e && e.message) || 'Could not reset the match.', 'err'); }
+    finally { M.busy = ''; render(); }
+  },
   mkSort: el => { (S.ui.market || (S.ui.market = { title: '', condition: 'Good', busy: '' })).sort = el.dataset.v; render(); },
   mkCond: el => { (S.ui.market || (S.ui.market = { title: '', condition: 'Good', busy: '' })).condition = el.dataset.v; render(); },
   mkRefresh: async el => {

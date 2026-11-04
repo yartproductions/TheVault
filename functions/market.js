@@ -94,3 +94,67 @@ function ebayChallengeResponse(challengeCode, verificationToken, endpoint) {
 }
 
 module.exports = { IN_STOCK, condGroup, storageOf, marketQuery, marketKey, ebayCategory, ebayFilter, landedPrice, priceStats, diffListings, weeklyGone, ebayChallengeResponse };
+
+// ── Precise matching to eBay item specifics ──────────────────────
+// Words in a listing title that mean it isn't the device itself (or not a working one).
+const JUNK = /\b(case|cover|skin|screen protector|tempered glass|box only|empty box|charger only|cable only|for parts|parts only|not working|read description|icloud locked|blacklisted|bad esn|lot of|bundle of|dummy|replica|housing|back glass|lcd|digitizer|motherboard|logic board)\b/i;
+const PARTS_OK = /\b(case|cover|skin|screen protector|tempered glass|box only|empty box|charger only|cable only|dummy|replica)\b/i;
+function junkTitle(title, group) {
+  const t = String(title || '');
+  return group === 'parts' ? PARTS_OK.test(t) : JUNK.test(t);
+}
+
+const words = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+
+// Picks the value of one eBay aspect (e.g. "Model") that best matches the Vault title,
+// preferring values whose words all appear in the title, then the most listings.
+function pickAspect(distributions, namePattern, title) {
+  const aspect = (distributions || []).find(a => namePattern.test(String(a.localizedAspectName || '')));
+  if (!aspect) return { value: '', options: [] };
+  const titleWords = new Set(words(title));
+  const options = (aspect.aspectValueDistributions || [])
+    .map(v => ({ value: String(v.localizedAspectValue || ''), count: Number(v.matchCount) || 0 }))
+    .filter(v => v.value && !/^(unknown|does not apply|not applicable|other)$/i.test(v.value));
+  const scored = options.map(o => {
+    const w = words(o.value);
+    const hits = w.filter(x => titleWords.has(x)).length;
+    return { ...o, score: w.length ? hits / w.length : 0, hits, extra: w.length - hits };
+  }).sort((a, b) => b.score - a.score || b.hits - a.hits || a.extra - b.extra || b.count - a.count);
+  const best = scored[0] && scored[0].score >= 0.99 ? scored[0].value : '';
+  return { value: best, options: options.sort((a, b) => b.count - a.count).slice(0, 10).map(o => o.value) };
+}
+
+// "128GB" → the way eBay writes storage, e.g. "128 GB".
+function pickStorage(distributions, specs, title) {
+  const want = storageOf(specs) || storageOf(title);
+  const aspect = (distributions || []).find(a => /storage capacity|^storage$/i.test(String(a.localizedAspectName || '')));
+  const options = aspect ? (aspect.aspectValueDistributions || []).map(v => String(v.localizedAspectValue || '')).filter(Boolean) : [];
+  if (!want) return { value: '', options: options.slice(0, 10) };
+  const norm = s => String(s).toUpperCase().replace(/\s+/g, '');
+  return { value: options.find(o => norm(o) === norm(want)) || '', options: options.slice(0, 10) };
+}
+
+// Network / carrier from the Vault specs text, matched to eBay's value when possible.
+function pickNetwork(distributions, specs) {
+  const s = String(specs || '').toLowerCase();
+  const carriers = ['unlocked', 'verizon', 'at&t', 't-mobile', 'sprint', 'us cellular', 'cricket', 'metro', 'boost', 'tracfone', 'straight talk'];
+  const found = carriers.find(c => s.includes(c));
+  const aspect = (distributions || []).find(a => /^network$|carrier/i.test(String(a.localizedAspectName || '')));
+  const options = aspect ? (aspect.aspectValueDistributions || []).map(v => String(v.localizedAspectValue || '')).filter(Boolean) : [];
+  if (!found) return { value: '', options: options.slice(0, 10) };
+  return { value: options.find(o => o.toLowerCase().includes(found.replace('&', '&'))) || '', options: options.slice(0, 10) };
+}
+
+// eBay aspect_filter string: "categoryId:9355,Model:{Apple iPhone 14 Pro},Storage Capacity:{128 GB}".
+function aspectFilter(category, match) {
+  if (!category || !match) return '';
+  const esc = v => String(v).replace(/([|{}])/g, '\\$1');
+  const parts = [];
+  if (match.brand) parts.push(`Brand:{${esc(match.brand)}}`);
+  if (match.model) parts.push(`Model:{${esc(match.model)}}`);
+  if (match.storage) parts.push(`${match.storageName || 'Storage Capacity'}:{${esc(match.storage)}}`);
+  if (match.network) parts.push(`${match.networkName || 'Network'}:{${esc(match.network)}}`);
+  return parts.length ? `categoryId:${category},${parts.join(',')}` : '';
+}
+
+Object.assign(module.exports, { junkTitle, pickAspect, pickStorage, pickNetwork, aspectFilter });
