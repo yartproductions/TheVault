@@ -44,18 +44,24 @@ jobs:
           npm install --no-save --prefix tests @firebase/rules-unit-testing@4 firebase@11
           npx --yes firebase-tools@latest emulators:exec --only firestore --project demo-vault "node tests/rules.test.mjs"
 
+      # Without the key, tests still run and the deploy is skipped (deploy from a computer instead).
       - name: Check the deploy key is set
+        id: key
         env:
           KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           if [ -z "$KEY" ]; then
-            echo "::error::Add the FIREBASE_SERVICE_ACCOUNT secret in GitHub → Settings → Secrets and variables → Actions."
-            exit 1
+            echo "::notice::Tests passed. Automatic deploy is off until the FIREBASE_SERVICE_ACCOUNT secret is added (GitHub → Settings → Secrets and variables → Actions). Deploy with: npx firebase-tools deploy --only functions,firestore:rules"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: google-github-actions/auth@v2
+        if: steps.key.outputs.ok == 'true'
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
       - name: Deploy to Firebase
+        if: steps.key.outputs.ok == 'true'
         run: npx --yes firebase-tools@latest deploy --only functions,firestore:rules,storage --project obsidian-vault-38dfd --non-interactive
