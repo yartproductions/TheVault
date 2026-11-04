@@ -117,3 +117,23 @@ test('aspect filter escapes values and names the category', () => {
   assert.equal(m.aspectFilter('9355', { model: 'A|B' }), 'categoryId:9355,Model:{A\\|B}');
   assert.equal(m.aspectFilter('', { model: 'x' }), '');
 });
+
+test('part numbers are found, sizes and speeds are not', () => {
+  assert.deepEqual(m.partNumbers('Lot of 4 | SK hynix 64GB HMA84GR7AFR4N-VK DDR4 2933MHz'), ['HMA84GR7AFR4N-VK']);
+  assert.deepEqual(m.partNumbers('Dell EMC 240GB SSD 0RVDT9 MZ-7KH240'), ['0RVDT9', 'MZ-7KH240']);
+  assert.deepEqual(m.partNumbers('Apple iPhone 14 Pro 128GB'), []);
+});
+
+test('identifying details are read from the title and specs', () => {
+  const dist = [
+    { localizedAspectName: 'Type', aspectValueDistributions: [{ localizedAspectValue: 'DDR4 SDRAM' }, { localizedAspectValue: 'DDR4' }, { localizedAspectValue: 'DDR3' }] },
+    { localizedAspectName: 'Speed', aspectValueDistributions: [{ localizedAspectValue: 'PC4-23400 (DDR4-2933)' }, { localizedAspectValue: '2933 MHz' }, { localizedAspectValue: '3200 MHz' }] },
+    { localizedAspectName: 'Form Factor', aspectValueDistributions: [{ localizedAspectValue: 'RDIMM' }, { localizedAspectValue: 'SO-DIMM' }] },
+    { localizedAspectName: 'Color', aspectValueDistributions: [{ localizedAspectValue: 'Green' }] }
+  ];
+  const picks = m.pickDetails(dist, 'SK hynix 64GB DDR4 2933MHz RDIMM green');
+  assert.deepEqual(picks, [{ name: 'Type', value: 'DDR4' }, { name: 'Speed', value: '2933 MHz' }, { name: 'Form Factor', value: 'RDIMM' }]);
+  assert.equal(m.detailScore({ storage: '64 GB', extra: picks }), 4);
+  assert.equal(m.detailScore({ mpn: 'HMA84GR7AFR4N-VK' }), 3);
+  assert.equal(m.aspectFilter('11211', { storage: '64 GB', storageName: 'Capacity per Module', extra: [{ name: 'Type', value: 'DDR4' }] }), 'categoryId:11211,Capacity per Module:{64 GB},Type:{DDR4}');
+});

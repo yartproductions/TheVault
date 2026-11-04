@@ -175,7 +175,49 @@ function aspectFilter(category, match) {
   if (match.model) parts.push(`Model:{${esc(match.model)}}`);
   if (match.storage) parts.push(`${match.storageName || 'Storage Capacity'}:{${esc(match.storage)}}`);
   if (match.network) parts.push(`${match.networkName || 'Network'}:{${esc(match.network)}}`);
+  for (const d of match.extra || []) if (d && d.name && d.value) parts.push(`${d.name}:{${esc(d.value)}}`);
   return parts.length ? `categoryId:${category},${parts.join(',')}` : '';
 }
 
 Object.assign(module.exports, { junkTitle, pickAspect, pickStorage, pickNetwork, aspectFilter, lotSize, stripLot, DEVICE_CATEGORIES });
+
+// ── Identifying details (what makes a part a specific part) ──────
+const compact = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]+/g, '');
+// Manufacturer part numbers look like HMA84GR7AFR4N-VK, MZ-7KH240, 0RVDT9: letters and digits, 6+ long.
+function partNumbers(text) {
+  const out = [];
+  for (const raw of String(text || '').toUpperCase().match(/\b[A-Z0-9][A-Z0-9-]{4,}[A-Z0-9]\b/g) || []) {
+    const t = raw.replace(/-+$/, '');
+    if (!/\d/.test(t) || !/[A-Z]/.test(t)) continue;
+    if (/^\d+(\.\d+)?(GB|TB|MB|MHZ|GHZ|W|MM|IN)$/.test(t)) continue; // sizes and speeds aren't part numbers
+    if (/^(DDR\d|PC\d|LPDDR\d|GDDR\d)/.test(t) && t.length < 10) continue;
+    if (!out.includes(t)) out.push(t);
+  }
+  return out.slice(0, 3);
+}
+
+// Which eBay item specifics identify a product (type, speed, form factor, interface, generation…).
+const DETAIL_ASPECT = /^(type|speed|bus speed|form factor|number of modules|capacity per module|interface|ecc|registered\/buffered|series|product line|processor|processor model|ram size|screen size|generation|chipset|lock status|connectivity|drive type|height|configuration|memory type|mpn)$/i;
+// Picks every detail aspect whose value is stated in the record's title or specs.
+function pickDetails(distributions, text) {
+  const hay = compact(text);
+  const picks = [];
+  for (const a of distributions || []) {
+    const name = String(a.localizedAspectName || '');
+    if (!DETAIL_ASPECT.test(name)) continue;
+    const found = (a.aspectValueDistributions || [])
+      .map(v => String(v.localizedAspectValue || ''))
+      .filter(v => compact(v).length >= 3 && !/^(unknown|does not apply|not applicable|other)$/i.test(v) && hay.includes(compact(v)))
+      .sort((x, y) => compact(y).length - compact(x).length);
+    if (found[0]) picks.push({ name, value: found[0] });
+  }
+  return picks.slice(0, 5);
+}
+
+// How precisely a record is described: model or part number count most, each detail adds a little.
+function detailScore(match) {
+  if (!match) return 0;
+  return (match.mpn ? 3 : 0) + (match.model ? 2 : 0) + (match.storage ? 1 : 0) + Math.min(3, (match.extra || []).length);
+}
+
+Object.assign(module.exports, { partNumbers, pickDetails, detailScore });

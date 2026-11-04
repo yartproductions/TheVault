@@ -573,11 +573,17 @@ async function ebayGet(token, params) {
 
 function searchParams(doc, extra = {}) {
   const match = doc.match || {};
+  // Part-number mode: the exact manufacturer part, in its category, nothing else to guess.
+  if (doc.mode === 'mpn' && match.mpn) {
+    const params = new URLSearchParams({ q: match.mpn, filter: market.ebayFilter(doc.group, doc.category), ...extra });
+    if (doc.category) params.set('category_ids', doc.category);
+    return { params, exact: true };
+  }
   const aspects = market.aspectFilter(doc.category, match);
   const params = new URLSearchParams({ q: (match.model && aspects ? match.model : doc.query).slice(0, 100), filter: market.ebayFilter(doc.group, doc.category), ...extra });
   if (doc.category) params.set('category_ids', doc.category);
   if (aspects) params.set('aspect_filter', aspects);
-  return { params, exact: !!(aspects && (match.model || (match.brand && match.storage))) };
+  return { params, exact: !!(aspects && (match.model || (match.brand && match.storage) || (match.extra || []).length >= 2)) };
 }
 
 async function ebaySearchAll(token, doc) {
@@ -601,13 +607,13 @@ async function ebaySearchAll(token, doc) {
     }
     if (!json.itemSummaries || json.itemSummaries.length < 200 || seen >= total) break;
   }
-  return { total: Math.max(0, total - junk), ids, listings, junk, exact, complete: seen >= total };
+  return { total: Math.max(0, total - junk), ids, listings, junk, exact, complete: seen >= total, mode: doc.mode === 'mpn' ? 'mpn' : 'details' };
 }
 
 // Finds eBay's own Brand / Model / Storage / Network values for a model, from one search
 // that returns how eBay's listings are spread across those item specifics.
 async function resolveMatch(token, doc) {
-  if (!doc.category) return { source: 'auto', at: new Date().toISOString(), model: '', options: {} };
+  if (!doc.category) { const mpn = market.partNumbers(`${doc.title || doc.query} ${doc.specs || ''}`)[0] || ''; return { source: 'auto', at: new Date().toISOString(), model: '', mpn, extra: [], detail: market.detailScore({ mpn }), options: {} }; }
   const params = new URLSearchParams({ q: doc.query.slice(0, 100), filter: market.ebayFilter(doc.group, doc.category), category_ids: doc.category, fieldgroups: 'ASPECT_REFINEMENTS', limit: '1' });
   const json = await ebayGet(token, params);
   const dist = (json.refinement && json.refinement.aspectDistributions) || [];
@@ -617,9 +623,14 @@ async function resolveMatch(token, doc) {
   const storage = market.pickStorage(dist, doc.specs || '', title);
   const network = market.pickNetwork(dist, doc.specs || '');
   const nameOf = re => ((dist.find(a => re.test(String(a.localizedAspectName || ''))) || {}).localizedAspectName) || '';
+  const text = `${doc.title || doc.query} ${doc.specs || ''}`;
+  const storageName = nameOf(/storage capacity|^storage$|total capacity|^capacity$|capacity per module/i);
+  const extra = market.pickDetails(dist, text).filter(d => d.name !== storageName);
+  const mpn = market.partNumbers(text)[0] || '';
+  const found = { brand: brand.value, model: model.value, storage: storage.value, extra, mpn };
   return {
     source: 'auto', at: new Date().toISOString(),
-    brand: brand.value, model: model.value, storage: storage.value, network: network.value,
+    brand: brand.value, model: model.value, storage: storage.value, network: network.value, mpn, extra, detail: market.detailScore(found),
     storageName: nameOf(/storage capacity|^storage$|total capacity|^capacity$|capacity per module/i) || 'Storage Capacity', networkName: nameOf(/^network$|carrier/i) || 'Network',
     options: { model: model.options, storage: storage.options, network: network.options }
   };
@@ -635,7 +646,7 @@ async function suggestCategory(token, query) {
   return top && top.category ? { id: String(top.category.categoryId), name: String(top.category.categoryName || '') } : null;
 }
 
-const matchSig = match => JSON.stringify([match && match.brand, match && match.model, match && match.storage, match && match.network]);
+const matchSig = match => JSON.stringify([match && match.brand, match && match.model, match && match.storage, match && match.network, match && match.mpn, (match && match.extra || []).map(d => `${d.name}=${d.value}`)]);
 
 // Builds the watch list from what is in stock: one model per title + storage + condition group.
 async function refreshAutoWatchlist() {
@@ -668,10 +679,11 @@ async function collectModel(token, ref, doc) {
     const stale = !match || (match.source !== 'manual' && Date.now() - Date.parse(match.at || 0) > 14 * 864e5);
     if (stale) match = await resolveMatch(token, doc);
     const sig = matchSig(match);
-    const result = await ebaySearchAll(token, { ...doc, match });
+    let result = match && match.mpn ? await ebaySearchAll(token, { ...doc, match, mode: 'mpn' }) : null;
+    if (!result || result.listings.length < 5) result = await ebaySearchAll(token, { ...doc, match, mode: 'details' });
     const stats = market.priceStats(result.listings.map(l => l.price));
     // A changed match means a different set of listings: skip one diff instead of counting false "sales".
-    const canDiff = result.complete && doc.lastComplete && Array.isArray(doc.ids) && doc.matchSig === sig;
+    const canDiff = result.complete && doc.lastComplete && Array.isArray(doc.ids) && doc.matchSig === sig && (doc.last || {}).mode === result.mode;
     const diff = canDiff ? market.diffListings(doc.ids, result.ids) : { gone: null, added: null };
     const point = { t: now, total: result.total, median: stats.median, p25: stats.p25, gone: diff.gone, added: diff.added };
     const history = [...(doc.history || []), point].slice(-MARKET_HISTORY);
@@ -679,7 +691,7 @@ async function collectModel(token, ref, doc) {
     const sample = stats.median ? [...result.listings].sort((a, b) => Math.abs(a.price - stats.median) - Math.abs(b.price - stats.median)).slice(0, 5) : [];
     await ref.set({
       match, matchSig: sig,
-      last: { t: now, total: result.total, priced: stats.n, low: stats.low, p25: stats.p25, median: stats.median, p75: stats.p75, high: stats.high, gone: diff.gone, added: diff.added, complete: result.complete, exact: result.exact, junk: result.junk },
+      last: { t: now, total: result.total, priced: stats.n, low: stats.low, p25: stats.p25, median: stats.median, p75: stats.p75, high: stats.high, gone: diff.gone, added: diff.added, complete: result.complete, exact: result.exact, junk: result.junk, mode: result.mode },
       sample, history,
       perWeek: market.weeklyGone(history),
       ids: result.complete ? result.ids : FieldValue.delete(),
@@ -762,7 +774,8 @@ exports.ebayMarketMatch = onCall({ secrets: EBAY_SECRETS, timeoutSeconds: 120 },
   if (data.reset) match = await resolveMatch(token, doc);
   else {
     const clean = v => String(v || '').trim().slice(0, 80);
-    match = { ...(doc.match || {}), model: clean(data.model), storage: clean(data.storage), network: clean(data.network), source: 'manual', at: new Date().toISOString() };
+    match = { ...(doc.match || {}), model: clean(data.model), storage: clean(data.storage), network: clean(data.network), mpn: clean(data.mpn).toUpperCase(), source: 'manual', at: new Date().toISOString() };
+    match.detail = market.detailScore(match);
   }
   await ref.set({ match }, { merge: true });
   const result = await collectModel(token, ref, { ...doc, match });

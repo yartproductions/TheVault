@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Obsidian Vault</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<script src="config.js?v=market-lots-20261104"></script>
+<script src="config.js?v=market-detail-20261104"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -773,7 +773,7 @@ function pItem() {
   <div class="cols"><div class="col-main">
     <section class="card pad" style="display:flex;flex-direction:column;gap:18px"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Details</h2><span class="sm mut2">Changes save automatically</span></div>
       <div class="grid g2 stack">${fSel(it, 'category', 'Category', Object.keys(CATS), { icon: 'grid' })}${fSel(it, 'condition', 'Condition', Object.keys(CONDS), { icon: 'star' })}
-      ${fIn(it, 'specs', 'Storage / color / specs', { icon: 'chip' })}${fIn(it, 'serial', 'Serial / IMEI', { icon: 'barcode', mono: 1 })}
+      ${fIn(it, 'specs', 'Part number / specs (storage, type, speed, carrier)', { icon: 'chip', ph: 'e.g. HMA84GR7AFR4N-VK DDR4 2933MHz RDIMM · or 128GB Unlocked' })}${fIn(it, 'serial', 'Serial / IMEI', { icon: 'barcode', mono: 1 })}
       ${fSel(it, 'status', 'Status', Object.keys(STATUS).map(k => [k, STATUS[k][0]]), { icon: 'layers' })}${fSel(it, 'bin', 'Storage location', S.settings.bins, { icon: 'pin', blank: 'No location' })}
       ${fSel(it, 'customerId', 'Seller', custOpts, { icon: 'users' })}${fSel(it, 'source', 'Lead source', SOURCES, { icon: 'link' })}
       ${fIn(it, 'acquired', 'Date acquired', { type: 'date', icon: 'book' })}${fIn(it, 'confidence', 'Confidence score (0–100)', { icon: 'check', mono: 1 })}</div>
@@ -865,7 +865,7 @@ function pIntake() {
       ${N.flash ? `<span class="sm" style="color:#5FE6AC;display:inline-flex;align-items:center;gap:6px">${ic('check', 14, 2.4)}${esc(N.flash)}</span>` : '<span class="sm mut2">Press Enter to add</span>'}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap" role="radiogroup" aria-label="Category">${Object.keys(CATS).map(c => `<button class="fchip" style="${f.category === c ? 'border-color:#3DDC97;color:var(--tx);background:#12241D' : ''}" data-act="inCat" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>
     <input class="in" id="n-title" data-bind="ui.intake.f.title" data-enter="inAdd" value="${esc(f.title)}" placeholder="Brand & model — e.g. Apple iPhone 14 Pro" aria-label="Brand and model" style="height:52px;font-size:17px;font-weight:500">
-    <div class="grid g2 stack" style="gap:12px"><input class="in" id="n-specs" data-bind="ui.intake.f.specs" data-enter="inAdd" value="${esc(f.specs)}" placeholder="Storage · carrier · color — 128GB Unlocked Midnight" aria-label="Storage, carrier, color, specs">
+    <div class="grid g2 stack" style="gap:12px"><input class="in" id="n-specs" data-bind="ui.intake.f.specs" data-enter="inAdd" value="${esc(f.specs)}" placeholder="Part number · storage · type · carrier — e.g. 128GB Unlocked, or HMA84GR7AFR4N-VK DDR4 RDIMM" aria-label="Part number and specs">
       <input class="in mono" id="n-serial" data-bind="ui.intake.f.serial" data-enter="inAdd" value="${esc(f.serial)}" placeholder="Serial / IMEI (optional)" aria-label="Serial or IMEI"></div>
     <div class="seg" role="radiogroup" aria-label="Condition">${Object.entries(CONDS).map(([c, col]) => `<button class="${f.condition === c ? 'on' : ''}" data-act="inCond" data-v="${c}"><i class="cd" style="background:${col}"></i>${c}</button>`).join('')}</div>
     <textarea class="ta" id="n-defect" data-bind="ui.intake.f.defect" rows="2" placeholder="Defects in plain English — scratches, battery health, anything not working (or “None found”)" aria-label="Defect description" style="height:auto;padding:11px 13px">${esc(f.defect)}</textarea>
@@ -1004,10 +1004,11 @@ const stat = (label, value, sub, src) => `<div class="card pad-s" style="backgro
 // Rework the score here: each rule gives 0–1, times its weight (weights add up to 100).
 // `full` is where a rule earns all its points, `zero` where it earns none (linear in between).
 const CONFIDENCE_RULES = [
-  { id: 'match', label: 'Exact eBay match', weight: 15, full: 1, zero: 0, value: (d) => (d.last || {}).exact ? 1 : 0, show: v => v ? 'matched on eBay item specifics' : 'keyword search only' },
-  { id: 'listings', label: 'Enough listings to compare', weight: 20, full: 30, zero: 3, value: (d) => (d.last || {}).priced ?? (d.last || {}).total ?? 0, show: v => `${v} priced listings` },
+  { id: 'detail', label: 'Item described precisely', weight: 15, full: 4, zero: 0, value: (d) => (d.match || {}).detail ?? 0, show: v => v >= 4 ? 'part number or model + details' : v ? 'some details' : 'brand/size only' },
+  { id: 'match', label: 'Exact eBay match', weight: 10, full: 1, zero: 0, value: (d) => (d.last || {}).exact ? 1 : 0, show: v => v ? 'matched on eBay item specifics' : 'keyword search only' },
+  { id: 'listings', label: 'Enough listings to compare', weight: 15, full: 30, zero: 3, value: (d) => (d.last || {}).priced ?? (d.last || {}).total ?? 0, show: v => `${v} priced listings` },
   { id: 'spread', label: 'Prices agree with each other', weight: 20, full: 0.10, zero: 0.50, value: (d) => { const l = d.last || {}; return l.median > 0 ? (l.p75 - l.p25) / l.median : 1; }, show: v => `middle half spans ${Math.round(v * 100)}% of the median` },
-  { id: 'history', label: 'Watched long enough', weight: 20, full: 8, zero: 0, value: (d) => (d.history || []).filter(h => h.gone != null && Date.now() - Date.parse(h.t) < 14 * 864e5).length, show: v => `${v} complete snapshots in 14 days` },
+  { id: 'history', label: 'Watched long enough', weight: 15, full: 8, zero: 0, value: (d) => (d.history || []).filter(h => h.gone != null && Date.now() - Date.parse(h.t) < 14 * 864e5).length, show: v => `${v} complete snapshots in 14 days` },
   { id: 'fresh', label: 'Recently checked', weight: 10, full: 12, zero: 72, value: (d) => (d.last || {}).t ? (Date.now() - Date.parse(d.last.t)) / 36e5 : 999, show: v => v > 900 ? 'never checked' : `${Math.round(v)} h old` },
   { id: 'yours', label: 'Backed by your own sales', weight: 15, full: 3, zero: 0, value: (d) => vaultModelStats(d.key).sold, show: v => `${v} of yours sold` }
 ];
@@ -1041,10 +1042,11 @@ function matchPanel(d, M) {
   const sel = (field, label, list) => `<label class="fld" style="flex:1 1 180px"><span class="sm mut2">${label}</span><select class="sel" data-bind="ui.market.fix.${field}"><option value="">Any</option>${opts(list, M.fix[field]).map(v => `<option ${M.fix[field] === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>`;
   return `<div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:10px">
     <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
-      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="sm mut">Matched on eBay as</span>${chip(m.brand, 'any brand')}${chip(m.model, 'model not matched')}${chip(m.storage, 'any storage')}${chip(m.network, 'any network')}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="sm mut">Matched on eBay as</span>${m.mpn ? chip('Part ' + m.mpn) : ''}${chip(m.brand, 'any brand')}${m.model || !(m.mpn || (m.extra || []).length) ? chip(m.model, 'model not matched') : ''}${chip(m.storage, 'any storage')}${m.network ? chip(m.network) : ''}${(m.extra || []).map(x => chip(x.value)).join('')}${l.mode === 'mpn' ? '<span class="sm mut2">· searched by part number</span>' : ''}
         ${l.t ? (l.exact ? `<span class="sm" style="color:#5FE6AC">✓ exact match</span>` : `<span class="sm" style="color:#F2C063">⚠ keyword search — fix the match for better data</span>`) : ''}${m.source === 'manual' ? '<span class="sm mut2">· set by you</span>' : ''}${l.junk ? `<span class="sm mut2">· ${l.junk} accessories/junk filtered out</span>` : ''}</div>
       ${editing ? '' : `<button class="btn sm" data-act="mkFix" data-key="${esc(d.key)}">Fix match</button>`}</div>
-    ${editing ? `<div class="acts" style="align-items:flex-end">${sel('model', 'eBay model', (m.options || {}).model)}${sel('storage', 'Storage', (m.options || {}).storage)}${sel('network', 'Network / carrier', (m.options || {}).network)}
+    ${l.t && (m.detail ?? 0) < 2 ? `<div class="notice"><div><b>Not enough detail for a reliable price.</b> "${esc(d.label || d.query)}" matches many different products. Add the <b>part number</b> (best), or the type, speed and form factor, to this item's specs — e.g. <span class="mono">HMA84GR7AFR4N-VK DDR4 2933MHz RDIMM</span>. ${(d.codes || []).slice(0, 4).map(c => `<a href="#/item/${encodeURIComponent(c)}">${esc(c)}</a>`).join(' ')}</div></div>` : ''}
+    ${editing ? `<div class="acts" style="align-items:flex-end"><label class="fld" style="flex:1 1 180px"><span class="sm mut2">Part number (most precise)</span><input class="in mono" data-bind="ui.market.fix.mpn" value="${esc(M.fix.mpn || '')}" placeholder="e.g. HMA84GR7AFR4N-VK"></label>${sel('model', 'eBay model', (m.options || {}).model)}${sel('storage', 'Storage', (m.options || {}).storage)}${sel('network', 'Network / carrier', (m.options || {}).network)}
       <button class="btn pri" data-act="mkFixSave" ${M.busy ? 'disabled' : ''}>${M.busy === 'fix' ? 'Saving…' : 'Save & re-check'}</button><button class="btn" data-act="mkFixAuto" ${M.busy ? 'disabled' : ''}>Back to automatic</button><button class="btn" data-act="mkFixCancel">Cancel</button></div>
       <div class="sm mut2">Choices come from eBay's own item specifics for this search. "Any" leaves that detail out.</div>` : ''}
     ${(d.sample || []).length ? `<details><summary class="sm mut2" style="cursor:pointer">See ${d.sample.length} listings it matched, near the median</summary><div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">${d.sample.map(x => `<div style="display:flex;justify-content:space-between;gap:12px;font-size:13px"><a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.title)}</a><span class="mono">${money(x.price)}</span></div>`).join('')}</div></details>` : ''}
@@ -1685,11 +1687,11 @@ const ACT = {
   actType: el => { S.ui.act.type = el.dataset.v; render(); },
   actWho: el => { S.ui.act.who = el.dataset.v; render(); },
   // settings
-  mkFix: el => { const d = S.market[el.dataset.key] || {}; const m = d.match || {}; S.ui.market.fix = { key: el.dataset.key, model: m.model || '', storage: m.storage || '', network: m.network || '' }; render(); },
+  mkFix: el => { const d = S.market[el.dataset.key] || {}; const m = d.match || {}; S.ui.market.fix = { key: el.dataset.key, model: m.model || '', storage: m.storage || '', network: m.network || '', mpn: m.mpn || '' }; render(); },
   mkFixCancel: () => { S.ui.market.fix = null; render(); },
   mkFixSave: async () => {
     const M = S.ui.market; const f = M.fix; if (!f) return; M.busy = 'fix'; render();
-    try { await S.fb.call('ebayMarketMatch', { key: f.key, model: f.model, storage: f.storage, network: f.network }); M.fix = null; toast('Match saved and eBay re-checked.'); }
+    try { await S.fb.call('ebayMarketMatch', { key: f.key, model: f.model, storage: f.storage, network: f.network, mpn: f.mpn || '' }); M.fix = null; toast('Match saved and eBay re-checked.'); }
     catch (e) { toast((e && e.message) || 'Could not save the match.', 'err'); }
     finally { M.busy = ''; render(); }
   },
