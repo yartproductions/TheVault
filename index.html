@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Obsidian Vault</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<script src="config.js?v=market-20261103"></script>
+<script src="config.js?v=market-design-20261104"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -952,45 +952,116 @@ function sparkline(doc) {
   return `<svg width="100" height="28" viewBox="0 0 100 28" aria-hidden="true"><polyline points="${d}" fill="none" stroke="#3DDC97" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
 }
 const agoText = t => { const m = Math.round((Date.now() - Date.parse(t)) / 60000); return !isFinite(m) ? '—' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
+// Where each number comes from, so nobody mistakes an estimate for eBay sold data.
+const SRC = { ebay: ['eBay live', '#8EC3FF', '#13243A'], est: ['Estimate', '#F2C063', '#2B2312'], vault: ['Your Vault', '#5FE6AC', '#0F2A1F'] };
+const srcTag = k => `<span style="font-size:10px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:${SRC[k][1]};background:${SRC[k][2]};padding:2px 7px;border-radius:999px;white-space:nowrap">${SRC[k][0]}</span>`;
+// How fast a model moves: weeks it would take to sell everything listed right now.
+function speedOf(doc) {
+  const l = (doc && doc.last) || {};
+  if (doc && doc.perWeek > 0 && l.total != null) {
+    const weeks = l.total / doc.perWeek;
+    if (weeks <= 2) return { label: 'Hot', color: '#06120D', bg: '#3DDC97', weeks, note: 'sells fast' };
+    if (weeks <= 6) return { label: 'Steady', color: '#06120D', bg: '#F2C063', weeks, note: 'sells normally' };
+    return { label: 'Slow', color: '#FFE3DA', bg: '#5A2A20', weeks, note: 'crowded market' };
+  }
+  return { label: 'Learning', color: '#C9D4CF', bg: '#1F2725', weeks: null, note: 'needs a few snapshots' };
+}
+// Profit per unit if your stock sells at a price, after your usual fees and shipping.
+function profitAt(price, key) {
+  const stock = itemsArr().filter(i => marketKeyOf(i) === key && STOCK.includes(i.status));
+  if (!stock.length || !(price > 0)) return null;
+  const cost = mean(stock.map(i => num(i.cost)));
+  return price - price * (+S.settings.feePct || 0) / 100 - (+S.settings.shipFlat || 0) - cost;
+}
+// Price range bar: grey = all listings, green band = middle half, white = median, plus markers
+// for the suggested prices and your cost. Labels live in the key underneath so nothing overlaps.
+function priceBar(doc, key, compact) {
+  const l = (doc && doc.last) || {}; if (!(l.low > 0 && l.high > l.low)) return '';
+  const sp = suggestPrices(doc); const lo = l.low, hi = l.high; const pos = v => Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100)).toFixed(1);
+  const stock = itemsArr().filter(i => marketKeyOf(i) === key && STOCK.includes(i.status)); const cost = stock.length ? mean(stock.map(i => num(i.cost))) : null;
+  const pin = (v, color, shape) => `<span style="position:absolute;left:${pos(v)}%;top:${shape === 'down' ? '-9px' : '13px'};transform:translateX(-50%);width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;${shape === 'down' ? 'border-top' : 'border-bottom'}:8px solid ${color}"></span>`;
+  const key2 = (color, label, v) => `<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><i style="width:9px;height:9px;border-radius:2px;background:${color};display:inline-block"></i>${label} <span class="mono" style="color:var(--tx)">${v}</span></span>`;
+  return `<div style="display:flex;flex-direction:column;gap:10px;padding:6px 2px 0">
+    <div style="display:flex;align-items:center;gap:12px"><span class="mono sm mut2" style="min-width:44px">${money0(lo)}</span>
+      <div style="position:relative;flex:1;height:10px;border-radius:999px;background:#1F2725">
+        <div style="position:absolute;left:${pos(l.p25)}%;width:${(pos(l.p75) - pos(l.p25)).toFixed(1)}%;top:0;bottom:0;border-radius:999px;background:linear-gradient(90deg,#1F5C45,#2E7A5C)"></div>
+        <div style="position:absolute;left:${pos(l.median)}%;top:-4px;bottom:-4px;width:2px;border-radius:1px;background:#E6EFEA;transform:translateX(-50%)"></div>
+        ${sp ? pin(sp.fast, '#3DDC97', 'down') + pin(sp.max, '#8EC3FF', 'down') : ''}${cost != null ? pin(Math.min(hi, Math.max(lo, cost)), '#9AA9A2', 'up') : ''}
+      </div><span class="mono sm mut2" style="min-width:44px;text-align:right">${money0(hi)}</span></div>
+    <div class="sm mut2" style="display:flex;gap:${compact ? '6px 12px' : '16px'};flex-wrap:wrap;padding-left:${compact ? 0 : 56}px">
+      ${compact ? key2('#E6EFEA', 'Median', money0(l.median)) + key2('#2E7A5C', 'Middle half', `${money0(l.p25)}–${money0(l.p75)}`) + (cost != null ? key2('#9AA9A2', 'Your cost', money0(cost)) : '')
+        : (sp ? key2('#3DDC97', 'Fast sale', money(sp.fast)) + key2('#8EC3FF', 'Max', money(sp.max)) : '') + key2('#E6EFEA', 'Median', money0(l.median)) + key2('#2E7A5C', 'Middle half', `${money0(l.p25)}–${money0(l.p75)}`) + (cost != null ? key2('#9AA9A2', 'Your cost', money0(cost)) + (cost < lo ? ' <span>(below every listing)</span>' : '') : '')}
+    </div></div>`;
+}
+const stat = (label, value, sub, src) => `<div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:4px;min-width:0"><span class="sm mut2">${label}</span><div class="mono" style="font-size:22px">${value}</div><div class="sm mut2" style="flex:1">${sub || '&nbsp;'}</div><div style="margin-top:4px">${srcTag(src)}</div></div>`;
 function pMarket() {
   const live = S.mode === 'firebase' && S.fb;
-  const docs = Object.values(S.market || {}).filter(d => d.active !== false);
-  docs.sort((a, b) => (b.perWeek ?? -1) - (a.perWeek ?? -1) || ((b.last || {}).total || 0) - ((a.last || {}).total || 0));
-  const M = S.ui.market || (S.ui.market = { title: '', condition: 'Good', busy: '' });
-  const meta = S.marketMeta || {};
-  const acts = live ? `<span class="sm mut2">${meta.lastRun ? 'Updated ' + agoText(meta.lastRun) + ' · every 6 h' : 'Not collected yet'}</span><button class="btn pri" data-act="mkRefresh" ${M.busy ? 'disabled' : ''}>${ic('sync', 16)}${M.busy === 'all' ? 'Refreshing…' : 'Refresh now'}</button>` : '';
   if (!live) return head('Live eBay prices and how fast models sell', 'Market') + emptyState('The Market needs live sync (Firebase) and eBay keys. See Settings.');
-  const rows = docs.map(d => {
-    const l = d.last || {}; const v = vaultModelStats(d.key); const sp = suggestPrices(d); const prev = medianWeekAgo(d);
-    const trend = prev && l.median ? (l.median - prev) / prev * 100 : null;
-    return `<section class="card pad" style="display:flex;flex-direction:column;gap:12px">
-      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start"><div style="min-width:0"><div style="font-weight:600;font-size:15px">${esc(d.label || d.query)}</div>
-        <div class="sm mut2" style="margin-top:3px">${d.group === 'parts' ? 'For parts' : 'Used'} · ${d.auto ? 'from your stock' : 'added by hand'}${l.t ? ' · checked ' + agoText(l.t) : ''}</div></div>
+  const M = S.ui.market || (S.ui.market = { title: '', condition: 'Good', busy: '', sort: 'speed' });
+  M.sort = M.sort || 'speed';
+  const meta = S.marketMeta || {};
+  const docs = Object.values(S.market || {}).filter(d => d.active !== false);
+  const sorters = {
+    speed: (a, b) => (speedOf(a).weeks ?? 1e9) - (speedOf(b).weeks ?? 1e9) || (b.perWeek ?? -1) - (a.perWeek ?? -1),
+    profit: (a, b) => (profitAt((suggestPrices(b) || {}).fast, b.key) ?? -1e9) - (profitAt((suggestPrices(a) || {}).fast, a.key) ?? -1e9),
+    stock: (a, b) => vaultModelStats(b.key).inStock - vaultModelStats(a.key).inStock
+  };
+  docs.sort(sorters[M.sort] || sorters.speed);
+  const hot = docs.filter(d => speedOf(d).label === 'Hot').length;
+  const acts = `<span class="sm mut2">${meta.lastRun ? 'eBay checked ' + agoText(meta.lastRun) + ' · repeats every 6 h' : 'Not checked yet'}</span><button class="btn pri" data-act="mkRefresh" ${M.busy ? 'disabled' : ''}>${ic('sync', 16)}${M.busy === 'all' ? 'Checking eBay…' : 'Refresh now'}</button>`;
+
+  const legend = `<section class="card pad" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center"><h2>Where the numbers come from</h2><span class="sm mut2">eBay doesn't share sold prices with apps, so nothing here is eBay sold data.</span></div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
+      <div style="display:flex;gap:10px;align-items:flex-start">${srcTag('ebay')}<span class="sm mut">Live listings on eBay right now: how many, and their asking prices (shipping included).</span></div>
+      <div style="display:flex;gap:10px;align-items:flex-start">${srcTag('est')}<span class="sm mut">Worked out from eBay snapshots: listings that disappear are counted as sold. Most did; some just ended.</span></div>
+      <div style="display:flex;gap:10px;align-items:flex-start">${srcTag('vault')}<span class="sm mut">Your real records: what you have, what you paid, what it sold for and how long it took.</span></div></div></section>`;
+
+  const cards = docs.map(d => {
+    const l = d.last || {}; const v = vaultModelStats(d.key); const sp = suggestPrices(d); const sd = speedOf(d);
+    const prev = medianWeekAgo(d); const trend = prev && l.median ? (l.median - prev) / prev * 100 : null;
+    const pf = sp ? profitAt(sp.fast, d.key) : null;
+    return `<section class="card pad" style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start">
+        <div style="display:flex;gap:12px;align-items:center;min-width:0">
+          <span style="font-size:12px;font-weight:700;letter-spacing:.8px;color:${sd.color};background:${sd.bg};padding:6px 11px;border-radius:8px;white-space:nowrap">${sd.label.toUpperCase()}</span>
+          <div style="min-width:0"><div style="font-weight:600;font-size:16px">${esc(d.label || d.query)}</div>
+            <div class="sm mut2" style="margin-top:3px">${d.group === 'parts' ? 'For parts' : 'Used'} · ${sd.weeks != null ? `about <b style="color:var(--tx)">${sd.weeks < 1 ? 'under a week' : Math.round(sd.weeks) + ' week' + (Math.round(sd.weeks) === 1 ? '' : 's')}</b> of supply — ${sd.note}` : sd.note}${l.t ? ` · checked ${agoText(l.t)}` : ''}</div></div></div>
         <div class="acts">${sparkline(d)}<button class="btn sm" data-act="mkRefresh" data-key="${esc(d.key)}" ${M.busy ? 'disabled' : ''}>${M.busy === d.key ? 'Checking…' : 'Check now'}</button>${!d.auto ? `<button class="btn sm" data-act="mkRemove" data-key="${esc(d.key)}">Stop watching</button>` : ''}</div></div>
-      ${d.error ? `<div class="notice bad"><div>${esc(d.error)}</div></div>` : ''}
-      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
-        ${[['On eBay now', l.total != null ? String(l.total) : '—', l.complete === false ? 'too many to track sales exactly' : ''],
-           ['Median price', l.median ? money0(l.median) : '—', trend != null ? `<span style="color:${trend >= 0 ? '#5FE6AC' : '#F2A08A'}">${trend >= 0 ? '▲' : '▼'} ${Math.abs(trend).toFixed(1)}% vs last week</span>` : (l.p25 ? `range ${money0(l.low)}–${money0(l.high)}` : '')],
-           ['Est. sold / week', d.perWeek != null ? String(d.perWeek) : '—', d.perWeek != null ? 'listings leaving eBay' : 'needs a few snapshots'],
-           ['Your stock', String(v.inStock), v.sold ? `${v.sold} sold · ${v.avgDays != null ? Math.round(v.avgDays) + ' days avg' : ''}` : 'none sold yet'],
-           ['Suggested price', sp ? `${money(sp.fast)}` : '—', sp ? `fast sale · ${money(sp.max)} for max` : '']]
-          .map(([k, val, sub]) => `<div class="card pad-s" style="background:var(--card2)"><div class="sm mut2">${k}</div><div class="mono" style="font-size:20px;margin-top:4px">${val}</div><div class="sm mut2" style="margin-top:2px">${sub}</div></div>`).join('')}
-      </div>${v.avgPrice ? `<div class="sm mut2">Your past sales: avg ${money(v.avgPrice)}${v.avgProfit != null ? ` · avg profit ${money(v.avgProfit)}` : ''}</div>` : ''}</section>`;
+      ${d.error ? `<div class="notice bad"><div><b>Couldn't check eBay:</b> ${esc(d.error)}</div></div>` : ''}
+      ${sp ? `<div class="glow" style="padding:14px 16px;display:flex;gap:16px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+        <div><div class="sm" style="color:#9EE7BC">Suggested asking price (shipping included)</div><div style="display:flex;gap:18px;align-items:baseline;margin-top:4px;flex-wrap:wrap"><span><span class="mono" style="font-size:26px;color:#5FE6AC">${money(sp.fast)}</span> <span class="sm mut">to sell fast</span></span><span><span class="mono" style="font-size:18px;color:#8EC3FF">${money(sp.max)}</span> <span class="sm mut">for max profit</span></span></div></div>
+        ${pf != null ? `<div style="text-align:right"><div class="sm mut2">Your profit per unit at the fast price</div><div class="mono" style="font-size:20px;color:${pf >= 0 ? '#5FE6AC' : '#F2A08A'}">${money(pf, 1)}</div><div class="sm mut2">after ${S.settings.feePct}% fees + $${S.settings.shipFlat} shipping</div></div>` : ''}</div>` : ''}
+      ${priceBar(d, d.key)}
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+        ${stat('Listed on eBay now', l.total != null ? String(l.total) : '—', l.complete === false ? 'too many to count sales exactly' : 'competing listings', 'ebay')}
+        ${stat('Typical asking price', l.median ? money0(l.median) : '—', trend != null ? `<span style="color:${trend >= 0 ? '#5FE6AC' : '#F2A08A'}">${trend >= 0 ? '▲' : '▼'} ${Math.abs(trend).toFixed(1)}% vs last week</span>` : 'median of listings', 'ebay')}
+        ${stat('Sold per week', d.perWeek != null ? '~' + d.perWeek : '—', d.perWeek != null ? 'listings leaving eBay' : 'needs a few snapshots', 'est')}
+        ${stat('Your stock', String(v.inStock), v.sold ? `${v.sold} sold before${v.avgDays != null ? ` · ${Math.round(v.avgDays)} days avg` : ''}` : 'none sold yet', 'vault')}
+        ${v.avgPrice ? stat('You sold for', money0(v.avgPrice), v.avgProfit != null ? `avg profit ${money(v.avgProfit)}` : '', 'vault') : ''}
+      </div></section>`;
   }).join('');
+
   return head('Live eBay prices and how fast models sell', 'Market', acts) + `
-    <section class="card pad" style="display:flex;flex-direction:column;gap:12px"><div><h2>Watch a model</h2><div class="sm mut2" style="margin-top:4px">Models in your stock are watched automatically. Add others you're thinking of buying.</div></div>
-      <div class="acts" style="align-items:stretch"><input class="in" id="mk-title" data-bind="ui.market.title" value="${esc(M.title)}" placeholder="Brand, model and storage, e.g. Apple iPhone 15 Pro 256GB" style="flex:1 1 280px">
-        <div class="seg">${['Good', 'For Parts'].map(c => `<button class="${M.condition === c ? 'on' : ''}" data-act="mkCond" data-v="${c}">${c === 'Good' ? 'Used' : 'For parts'}</button>`).join('')}</div>
-        <button class="btn" data-act="mkAdd" ${M.busy ? 'disabled' : ''}>${ic('plus', 16, 2.2)}${M.busy === 'add' ? 'Adding…' : 'Watch'}</button></div></section>
-    <div class="notice info"><div><b>How to read this.</b> eBay doesn't share sold prices, so the Market takes a snapshot of live listings every 6 hours. <b>Est. sold / week</b> counts listings that disappear between snapshots (most sold, some just ended), and gets more accurate over a couple of weeks. Prices include shipping. <b>Fast sale</b> is just under a quarter of the market; <b>max</b> is the middle of the market.</div></div>
-    ${rows || emptyState('No models yet. Press Refresh now to build the list from your stock, or watch a model above.')}`;
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+      ${[['Models watched', String(docs.length), 'from your stock + added'], ['Hot right now', String(hot), 'under 2 weeks of supply'], ['Units in stock', String(docs.reduce((n, d) => n + vaultModelStats(d.key).inStock, 0)), 'across watched models']].map(([k, v, sub]) => `<div class="card pad-s"><div class="sm mut2">${k}</div><div class="mono" style="font-size:26px;margin-top:4px">${v}</div><div class="sm mut2">${sub}</div></div>`).join('')}
+    </div>
+    ${legend}
+    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center">
+      <div class="seg" aria-label="Sort models">${[['speed', 'Fastest selling'], ['profit', 'Most profit'], ['stock', 'Most in stock']].map(([k, l]) => `<button class="${M.sort === k ? 'on' : ''}" data-act="mkSort" data-v="${k}">${l}</button>`).join('')}</div>
+      <div class="acts" style="align-items:stretch;flex:1 1 420px;justify-content:flex-end"><input class="in" id="mk-title" data-bind="ui.market.title" value="${esc(M.title)}" placeholder="Watch another model, e.g. Apple iPhone 15 Pro 256GB" style="flex:1 1 260px;max-width:420px">
+        <div class="seg">${['Good', 'For Parts'].map(c => `<button class="${M.condition === c ? 'on' : ''}" data-act="mkCond" data-v="${c}">${c === 'Good' ? 'Used' : 'Parts'}</button>`).join('')}</div>
+        <button class="btn" data-act="mkAdd" ${M.busy ? 'disabled' : ''}>${ic('plus', 16, 2.2)}${M.busy === 'add' ? 'Adding…' : 'Watch'}</button></div></div>
+    ${cards || emptyState('No models yet. Press Refresh now to build the list from your stock, or watch a model above.')}`;
 }
 function marketBox(it) {
   if (!(S.mode === 'firebase' && S.fb) || ['sold', 'arch'].includes(it.status)) return '';
-  const key = marketKeyOf(it); const d = S.market[key]; const l = (d && d.last) || {}; const sp = suggestPrices(d); const v = vaultModelStats(key);
+  const key = marketKeyOf(it); const d = S.market[key]; const l = (d && d.last) || {}; const sp = suggestPrices(d); const v = vaultModelStats(key); const sd = speedOf(d);
   return `<section class="card pad" style="display:flex;flex-direction:column;gap:10px"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Market check</h2><a class="sm" href="#/market">Market →</a></div>
-    ${d && l.t ? `<div class="row"><span class="mut">On eBay now</span><span class="mono">${l.total ?? '—'}</span></div><div class="row"><span class="mut">Median price</span><span class="mono">${l.median ? money(l.median) : '—'}</span></div><div class="row"><span class="mut">Est. sold / week</span><span class="mono">${d.perWeek ?? '—'}</span></div>${v.avgDays != null ? `<div class="row"><span class="mut">Your avg days to sell</span><span class="mono">${Math.round(v.avgDays)}</span></div>` : ''}
-      ${sp ? `<div class="acts"><button class="btn sm pri" data-act="mkUsePrice" data-code="${esc(it.code)}" data-v="${sp.fast}">Use ${money(sp.fast)} · fast</button><button class="btn sm" data-act="mkUsePrice" data-code="${esc(it.code)}" data-v="${sp.max}">Use ${money(sp.max)} · max</button></div>` : ''}<div class="sm mut2">Checked ${agoText(l.t)} · prices include shipping</div>`
+    ${d && l.t ? `<div style="display:flex;gap:10px;align-items:center"><span style="font-size:11px;font-weight:700;letter-spacing:.8px;color:${sd.color};background:${sd.bg};padding:4px 9px;border-radius:7px">${sd.label.toUpperCase()}</span><span class="sm mut">${sd.weeks != null ? `~${Math.max(1, Math.round(sd.weeks))} wk of supply on eBay` : sd.note}</span></div>
+      ${priceBar(d, key, true)}
+      <div class="row"><span class="mut">Listed on eBay now ${srcTag('ebay')}</span><span class="mono">${l.total ?? '—'}</span></div><div class="row"><span class="mut">Sold per week ${srcTag('est')}</span><span class="mono">${d.perWeek != null ? '~' + d.perWeek : '—'}</span></div>${v.avgDays != null ? `<div class="row"><span class="mut">Your avg days to sell ${srcTag('vault')}</span><span class="mono">${Math.round(v.avgDays)}</span></div>` : ''}
+      ${sp ? `<div class="acts"><button class="btn sm pri" data-act="mkUsePrice" data-code="${esc(it.code)}" data-v="${sp.fast}">Use ${money(sp.fast)} · fast</button><button class="btn sm" data-act="mkUsePrice" data-code="${esc(it.code)}" data-v="${sp.max}">Use ${money(sp.max)} · max</button></div>` : ''}<div class="sm mut2">eBay checked ${agoText(l.t)} · asking prices, not sold prices</div>`
       : d && d.error ? `<div class="notice bad"><div>${esc(d.error)}</div></div>` : `<div class="sm mut2">${d ? 'Waiting for the first eBay snapshot.' : 'Not watched on eBay yet.'}</div><button class="btn sm" data-act="mkWatchItem" data-code="${esc(it.code)}" ${S.ui.market && S.ui.market.busy ? 'disabled' : ''}>${ic('trend', 14)}Check eBay now</button>`}</section>`;
 }
 
@@ -1537,6 +1608,7 @@ const ACT = {
   actType: el => { S.ui.act.type = el.dataset.v; render(); },
   actWho: el => { S.ui.act.who = el.dataset.v; render(); },
   // settings
+  mkSort: el => { (S.ui.market || (S.ui.market = { title: '', condition: 'Good', busy: '' })).sort = el.dataset.v; render(); },
   mkCond: el => { (S.ui.market || (S.ui.market = { title: '', condition: 'Good', busy: '' })).condition = el.dataset.v; render(); },
   mkRefresh: async el => {
     const M = S.ui.market || (S.ui.market = { title: '', condition: 'Good', busy: '' }); const key = el.dataset.key || '';
