@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Obsidian Vault</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<script src="config.js?v=market-design-20261104"></script>
+<script src="config.js?v=market-confidence-20261104"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -994,6 +994,37 @@ function priceBar(doc, key, compact) {
     </div></div>`;
 }
 const stat = (label, value, sub, src) => `<div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:4px;min-width:0"><span class="sm mut2">${label}</span><div class="mono" style="font-size:22px">${value}</div><div class="sm mut2" style="flex:1">${sub || '&nbsp;'}</div><div style="margin-top:4px">${srcTag(src)}</div></div>`;
+// ── Suggested-price confidence ────────────────────────────────────
+// Rework the score here: each rule gives 0–1, times its weight (weights add up to 100).
+// `full` is where a rule earns all its points, `zero` where it earns none (linear in between).
+const CONFIDENCE_RULES = [
+  { id: 'listings', label: 'Enough listings to compare', weight: 25, full: 30, zero: 3, value: (d) => (d.last || {}).priced ?? (d.last || {}).total ?? 0, show: v => `${v} priced listings` },
+  { id: 'spread', label: 'Prices agree with each other', weight: 25, full: 0.10, zero: 0.50, value: (d) => { const l = d.last || {}; return l.median > 0 ? (l.p75 - l.p25) / l.median : 1; }, show: v => `middle half spans ${Math.round(v * 100)}% of the median` },
+  { id: 'history', label: 'Watched long enough', weight: 20, full: 8, zero: 0, value: (d) => (d.history || []).filter(h => h.gone != null && Date.now() - Date.parse(h.t) < 14 * 864e5).length, show: v => `${v} complete snapshots in 14 days` },
+  { id: 'fresh', label: 'Recently checked', weight: 15, full: 12, zero: 72, value: (d) => (d.last || {}).t ? (Date.now() - Date.parse(d.last.t)) / 36e5 : 999, show: v => v > 900 ? 'never checked' : `${Math.round(v)} h old` },
+  { id: 'yours', label: 'Backed by your own sales', weight: 15, full: 3, zero: 0, value: (d) => vaultModelStats(d.key).sold, show: v => `${v} of yours sold` }
+];
+const CONFIDENCE_LEVELS = [[75, 'High', '#3DDC97'], [50, 'Medium', '#F2C063'], [0, 'Low', '#F2A08A']];
+function confidenceOf(doc) {
+  if (!doc || !(doc.last || {}).median) return null;
+  const parts = CONFIDENCE_RULES.map(r => {
+    const v = r.value(doc); const t = (v - r.zero) / (r.full - r.zero);
+    const share = Math.max(0, Math.min(1, isFinite(t) ? t : 0));
+    return { label: r.label, detail: r.show(v), points: Math.round(share * r.weight), weight: r.weight };
+  });
+  const score = parts.reduce((n, p) => n + p.points, 0);
+  const [, level, color] = CONFIDENCE_LEVELS.find(([min]) => score >= min);
+  return { score, level, color, parts };
+}
+function confidenceMeter(c, big) {
+  if (!c) return '';
+  const segs = 10; const on = Math.round(c.score / 100 * segs);
+  return `<div style="display:flex;align-items:center;gap:8px"><div style="display:flex;gap:2px" aria-hidden="true">${Array.from({ length: segs }, (_, i) => `<span style="width:${big ? 9 : 7}px;height:${big ? 14 : 10}px;border-radius:2px;background:${i < on ? c.color : '#26312C'}"></span>`).join('')}</div><span class="mono" style="font-size:${big ? 15 : 12}px;color:${c.color}">${c.score}</span><span class="sm" style="color:${c.color}">${c.level}</span></div>`;
+}
+function confidenceWhy(c) {
+  if (!c) return '';
+  return `<details style="font-size:12px"><summary class="mut2" style="cursor:pointer">Why this confidence?</summary><div style="display:flex;flex-direction:column;gap:4px;margin-top:8px">${c.parts.map(p => `<div style="display:flex;justify-content:space-between;gap:10px"><span class="mut">${p.label} <span class="mut2">· ${esc(p.detail)}</span></span><span class="mono">${p.points}/${p.weight}</span></div>`).join('')}</div></details>`;
+}
 function pMarket() {
   const live = S.mode === 'firebase' && S.fb;
   if (!live) return head('Live eBay prices and how fast models sell', 'Market') + emptyState('The Market needs live sync (Firebase) and eBay keys. See Settings.');
@@ -1008,6 +1039,16 @@ function pMarket() {
   };
   docs.sort(sorters[M.sort] || sorters.speed);
   const hot = docs.filter(d => speedOf(d).label === 'Hot').length;
+  // Stock value at the suggested prices, and a confidence weighted by how much money each model represents.
+  const tot = { fast: 0, max: 0, cost: 0, units: 0, unpriced: 0, conf: null };
+  let wSum = 0, wScore = 0;
+  for (const d of docs) {
+    const stock = itemsArr().filter(i => marketKeyOf(i) === d.key && STOCK.includes(i.status)); if (!stock.length) continue;
+    const sp = suggestPrices(d); if (!sp) { tot.unpriced += stock.length; continue; }
+    tot.fast += sp.fast * stock.length; tot.max += sp.max * stock.length; tot.cost += stock.reduce((n, i) => n + num(i.cost), 0); tot.units += stock.length;
+    const c = confidenceOf(d); if (c) { wSum += sp.fast * stock.length; wScore += c.score * sp.fast * stock.length; }
+  }
+  if (wSum) { const score = Math.round(wScore / wSum); const [, level, color] = CONFIDENCE_LEVELS.find(([min]) => score >= min); tot.conf = { score, level, color }; }
   const acts = `<span class="sm mut2">${meta.lastRun ? 'eBay checked ' + agoText(meta.lastRun) + ' · repeats every 6 h' : 'Not checked yet'}</span><button class="btn pri" data-act="mkRefresh" ${M.busy ? 'disabled' : ''}>${ic('sync', 16)}${M.busy === 'all' ? 'Checking eBay…' : 'Refresh now'}</button>`;
 
   const legend = `<section class="card pad" style="display:flex;flex-direction:column;gap:12px">
@@ -1020,7 +1061,7 @@ function pMarket() {
   const cards = docs.map(d => {
     const l = d.last || {}; const v = vaultModelStats(d.key); const sp = suggestPrices(d); const sd = speedOf(d);
     const prev = medianWeekAgo(d); const trend = prev && l.median ? (l.median - prev) / prev * 100 : null;
-    const pf = sp ? profitAt(sp.fast, d.key) : null;
+    const pf = sp ? profitAt(sp.fast, d.key) : null; const conf = confidenceOf(d);
     return `<section class="card pad" style="display:flex;flex-direction:column;gap:14px">
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start">
         <div style="display:flex;gap:12px;align-items:center;min-width:0">
@@ -1031,8 +1072,10 @@ function pMarket() {
       ${d.error ? `<div class="notice bad"><div><b>Couldn't check eBay:</b> ${esc(d.error)}</div></div>` : ''}
       ${sp ? `<div class="glow" style="padding:14px 16px;display:flex;gap:16px;flex-wrap:wrap;align-items:center;justify-content:space-between">
         <div><div class="sm" style="color:#9EE7BC">Suggested asking price (shipping included)</div><div style="display:flex;gap:18px;align-items:baseline;margin-top:4px;flex-wrap:wrap"><span><span class="mono" style="font-size:26px;color:#5FE6AC">${money(sp.fast)}</span> <span class="sm mut">to sell fast</span></span><span><span class="mono" style="font-size:18px;color:#8EC3FF">${money(sp.max)}</span> <span class="sm mut">for max profit</span></span></div></div>
+        <div style="display:flex;flex-direction:column;gap:4px"><span class="sm mut2">Confidence in this price</span>${confidenceMeter(conf, true)}</div>
         ${pf != null ? `<div style="text-align:right"><div class="sm mut2">Your profit per unit at the fast price</div><div class="mono" style="font-size:20px;color:${pf >= 0 ? '#5FE6AC' : '#F2A08A'}">${money(pf, 1)}</div><div class="sm mut2">after ${S.settings.feePct}% fees + $${S.settings.shipFlat} shipping</div></div>` : ''}</div>` : ''}
       ${priceBar(d, d.key)}
+      ${confidenceWhy(conf)}
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
         ${stat('Listed on eBay now', l.total != null ? String(l.total) : '—', l.complete === false ? 'too many to count sales exactly' : 'competing listings', 'ebay')}
         ${stat('Typical asking price', l.median ? money0(l.median) : '—', trend != null ? `<span style="color:${trend >= 0 ? '#5FE6AC' : '#F2A08A'}">${trend >= 0 ? '▲' : '▼'} ${Math.abs(trend).toFixed(1)}% vs last week</span>` : 'median of listings', 'ebay')}
@@ -1043,8 +1086,12 @@ function pMarket() {
   }).join('');
 
   return head('Live eBay prices and how fast models sell', 'Market', acts) + `
-    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
-      ${[['Models watched', String(docs.length), 'from your stock + added'], ['Hot right now', String(hot), 'under 2 weeks of supply'], ['Units in stock', String(docs.reduce((n, d) => n + vaultModelStats(d.key).inStock, 0)), 'across watched models']].map(([k, v, sub]) => `<div class="card pad-s"><div class="sm mut2">${k}</div><div class="mono" style="font-size:26px;margin-top:4px">${v}</div><div class="sm mut2">${sub}</div></div>`).join('')}
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px">
+      <div class="glow" style="padding:16px;display:flex;flex-direction:column;gap:4px;grid-column:span 2;min-width:0"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span class="sm" style="color:#9EE7BC">Total suggested value of your stock</span>${srcTag('est')}</div>
+        <div style="display:flex;gap:18px;align-items:baseline;flex-wrap:wrap"><span><span class="mono" style="font-size:30px;color:#5FE6AC">${money0(tot.fast)}</span> <span class="sm mut">at fast prices</span></span><span><span class="mono" style="font-size:20px;color:#8EC3FF">${money0(tot.max)}</span> <span class="sm mut">at max</span></span></div>
+        <div class="sm mut2">${tot.units} unit${tot.units === 1 ? '' : 's'} priced · you paid ${money0(tot.cost)} · ${tot.unpriced ? `${tot.unpriced} without an eBay price yet` : 'all priced'}</div></div>
+      <div class="card pad-s" style="display:flex;flex-direction:column;gap:6px"><div class="sm mut2">Price confidence (value-weighted)</div>${tot.conf ? confidenceMeter(tot.conf, true) : '<div class="mono" style="font-size:22px">—</div>'}<div class="sm mut2">how much to trust the suggested prices</div></div>
+      <div class="card pad-s"><div class="sm mut2">Hot right now</div><div class="mono" style="font-size:26px;margin-top:4px">${hot} <span class="sm mut2" style="font-family:inherit">of ${docs.length} models</span></div><div class="sm mut2">under 2 weeks of supply</div></div>
     </div>
     ${legend}
     <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center">
@@ -1060,6 +1107,7 @@ function marketBox(it) {
   return `<section class="card pad" style="display:flex;flex-direction:column;gap:10px"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Market check</h2><a class="sm" href="#/market">Market →</a></div>
     ${d && l.t ? `<div style="display:flex;gap:10px;align-items:center"><span style="font-size:11px;font-weight:700;letter-spacing:.8px;color:${sd.color};background:${sd.bg};padding:4px 9px;border-radius:7px">${sd.label.toUpperCase()}</span><span class="sm mut">${sd.weeks != null ? `~${Math.max(1, Math.round(sd.weeks))} wk of supply on eBay` : sd.note}</span></div>
       ${priceBar(d, key, true)}
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="sm mut">Price confidence</span>${confidenceMeter(confidenceOf(d))}</div>
       <div class="row"><span class="mut">Listed on eBay now ${srcTag('ebay')}</span><span class="mono">${l.total ?? '—'}</span></div><div class="row"><span class="mut">Sold per week ${srcTag('est')}</span><span class="mono">${d.perWeek != null ? '~' + d.perWeek : '—'}</span></div>${v.avgDays != null ? `<div class="row"><span class="mut">Your avg days to sell ${srcTag('vault')}</span><span class="mono">${Math.round(v.avgDays)}</span></div>` : ''}
       ${sp ? `<div class="acts"><button class="btn sm pri" data-act="mkUsePrice" data-code="${esc(it.code)}" data-v="${sp.fast}">Use ${money(sp.fast)} · fast</button><button class="btn sm" data-act="mkUsePrice" data-code="${esc(it.code)}" data-v="${sp.max}">Use ${money(sp.max)} · max</button></div>` : ''}<div class="sm mut2">eBay checked ${agoText(l.t)} · asking prices, not sold prices</div>`
       : d && d.error ? `<div class="notice bad"><div>${esc(d.error)}</div></div>` : `<div class="sm mut2">${d ? 'Waiting for the first eBay snapshot.' : 'Not watched on eBay yet.'}</div><button class="btn sm" data-act="mkWatchItem" data-code="${esc(it.code)}" ${S.ui.market && S.ui.market.busy ? 'disabled' : ''}>${ic('trend', 14)}Check eBay now</button>`}</section>`;

@@ -79,6 +79,8 @@ With Firebase Functions deployed, Settings can switch Shopify to **Create Shopif
 
 The **Market** page shows, for every model in stock (plus any you add): how many are listed on eBay right now, the median price and its trend, an estimate of how many sell per week, your own past sales of that model, and a suggested price for a fast sale or for maximum profit. Each item page has a **Market check** box with one-click buttons to use those prices.
 
+The top of the page shows the **total suggested value** of your stock in watched models (at fast and max prices, next to what you paid) and a **price confidence** score. Each model has its own confidence meter with a "Why this confidence?" breakdown. The score's rules and weights live in one place, `CONFIDENCE_RULES` in `index.html`, so they can be reworked without touching anything else.
+
 How it works: every 6 hours a Firebase function takes a snapshot of eBay's live fixed-price listings for each model through eBay's Browse API. eBay doesn't share sold prices, so "sold per week" counts listings that disappear between snapshots (most sold, some just ended). Only counts, prices and listing ids are kept.
 
 Setup (once):
