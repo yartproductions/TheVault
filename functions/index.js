@@ -574,10 +574,10 @@ async function ebayGet(token, params) {
 function searchParams(doc, extra = {}) {
   const match = doc.match || {};
   const aspects = market.aspectFilter(doc.category, match);
-  const params = new URLSearchParams({ q: (match.model && aspects ? match.model : doc.query).slice(0, 100), filter: market.ebayFilter(doc.group), ...extra });
+  const params = new URLSearchParams({ q: (match.model && aspects ? match.model : doc.query).slice(0, 100), filter: market.ebayFilter(doc.group, doc.category), ...extra });
   if (doc.category) params.set('category_ids', doc.category);
   if (aspects) params.set('aspect_filter', aspects);
-  return { params, exact: !!(aspects && match.model) };
+  return { params, exact: !!(aspects && (match.model || (match.brand && match.storage))) };
 }
 
 async function ebaySearchAll(token, doc) {
@@ -592,10 +592,12 @@ async function ebaySearchAll(token, doc) {
     total = Number(json.total) || 0;
     for (const s of json.itemSummaries || []) {
       seen++;
-      if (market.junkTitle(s.title, doc.group)) { junk++; continue; }
+      if (market.junkTitle(s.title, doc.group, doc.category)) { junk++; continue; }
       if (s.itemId) ids.push(s.itemId);
       const p = market.landedPrice(s);
-      if (p != null) listings.push({ id: s.itemId, title: String(s.title || '').slice(0, 120), price: p, url: s.itemWebUrl || '' });
+      // Lot listings ("Lot of 5", "2x16GB") are compared per unit.
+      const units = market.lotSize(s.title);
+      if (p != null) listings.push({ id: s.itemId, title: String(s.title || '').slice(0, 120), price: +(p / units).toFixed(2), lot: units, url: s.itemWebUrl || '' });
     }
     if (!json.itemSummaries || json.itemSummaries.length < 200 || seen >= total) break;
   }
@@ -606,7 +608,7 @@ async function ebaySearchAll(token, doc) {
 // that returns how eBay's listings are spread across those item specifics.
 async function resolveMatch(token, doc) {
   if (!doc.category) return { source: 'auto', at: new Date().toISOString(), model: '', options: {} };
-  const params = new URLSearchParams({ q: doc.query.slice(0, 100), filter: market.ebayFilter(doc.group), category_ids: doc.category, fieldgroups: 'ASPECT_REFINEMENTS', limit: '1' });
+  const params = new URLSearchParams({ q: doc.query.slice(0, 100), filter: market.ebayFilter(doc.group, doc.category), category_ids: doc.category, fieldgroups: 'ASPECT_REFINEMENTS', limit: '1' });
   const json = await ebayGet(token, params);
   const dist = (json.refinement && json.refinement.aspectDistributions) || [];
   const title = doc.title || doc.query;
@@ -618,9 +620,19 @@ async function resolveMatch(token, doc) {
   return {
     source: 'auto', at: new Date().toISOString(),
     brand: brand.value, model: model.value, storage: storage.value, network: network.value,
-    storageName: nameOf(/storage capacity|^storage$/i) || 'Storage Capacity', networkName: nameOf(/^network$|carrier/i) || 'Network',
+    storageName: nameOf(/storage capacity|^storage$|total capacity|^capacity$|capacity per module/i) || 'Storage Capacity', networkName: nameOf(/^network$|carrier/i) || 'Network',
     options: { model: model.options, storage: storage.options, network: network.options }
   };
+}
+
+// Asks eBay which category a model belongs in, for items the Vault has no fixed category for.
+async function suggestCategory(token, query) {
+  const url = `https://api.ebay.com/commerce/taxonomy/v1/category_tree/0/get_category_suggestions?q=${encodeURIComponent(query.slice(0, 100))}`;
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) return null;
+  const top = (json.categorySuggestions || [])[0];
+  return top && top.category ? { id: String(top.category.categoryId), name: String(top.category.categoryName || '') } : null;
 }
 
 const matchSig = match => JSON.stringify([match && match.brand, match && match.model, match && match.storage, match && match.network]);
@@ -633,13 +645,13 @@ async function refreshAutoWatchlist() {
     const it = d.data();
     const key = market.marketKey(it.title, it.specs, it.condition);
     if (!key) return;
-    const entry = seen.get(key) || { key, label: market.marketQuery(it.title, it.specs), query: market.marketQuery(it.title, it.specs), title: String(it.title || ''), specs: String(it.specs || ''), group: market.condGroup(it.condition), category: market.ebayCategory(it.category, it.title), codes: [] };
+    const entry = seen.get(key) || { key, label: market.marketQuery(it.title, it.specs), query: market.marketQuery(it.title, it.specs), title: market.stripLot(it.title), specs: String(it.specs || ''), group: market.condGroup(it.condition), category: market.ebayCategory(it.category, it.title), codes: [] };
     entry.codes.push(d.id);
     seen.set(key, entry);
   });
   const batch = db.batch();
   for (const e of [...seen.values()].slice(0, MARKET_MAX_MODELS)) {
-    batch.set(db.doc(`market/${e.key}`), { key: e.key, label: e.label, query: e.query, title: e.title, specs: e.specs, group: e.group, category: e.category, codes: e.codes.sort(), auto: true, active: true }, { merge: true });
+    batch.set(db.doc(`market/${e.key}`), { key: e.key, label: e.label, query: e.query, title: e.title, specs: e.specs, group: e.group, ...(e.category ? { category: e.category } : {}), codes: e.codes.sort(), auto: true, active: true }, { merge: true });
   }
   await batch.commit();
 }
@@ -647,6 +659,11 @@ async function refreshAutoWatchlist() {
 async function collectModel(token, ref, doc) {
   const now = new Date().toISOString();
   try {
+    if (!doc.category && !doc.categoryChecked) {
+      const cat = await suggestCategory(token, doc.query).catch(() => null);
+      doc = { ...doc, category: cat ? cat.id : '', categoryName: cat ? cat.name : '', categoryChecked: true };
+      await ref.set({ category: doc.category, categoryName: doc.categoryName, categoryChecked: true }, { merge: true });
+    }
     let match = doc.match;
     const stale = !match || (match.source !== 'manual' && Date.now() - Date.parse(match.at || 0) > 14 * 864e5);
     if (stale) match = await resolveMatch(token, doc);

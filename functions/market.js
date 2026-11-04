@@ -13,9 +13,20 @@ function storageOf(specs) {
   return m ? `${m[1]}${m[2].toUpperCase()}` : '';
 }
 
+// How many units a title describes: "Lot of 4 | SK hynix 64GB" → 4, "2x16GB kit" → 2, otherwise 1.
+const LOT_PATTERNS = [/\blot\s*of\s*\(?(\d{1,3})\)?/i, /\b(?:set|bundle|pack|box)\s*of\s*\(?(\d{1,3})\)?/i, /\b(\d{1,3})\s*(?:pcs|pc|pieces|pack|count|ct|units)\b/i, /\b(\d{1,2})\s*x\s*\d+(?:\.\d+)?\s*(?:gb|tb)\b/i];
+function lotSize(title) {
+  for (const re of LOT_PATTERNS) { const m = String(title || '').match(re); if (m) { const n = Number(m[1]); if (n >= 1 && n <= 100) return n; } }
+  return 1;
+}
+// The title without lot wording or separators, so a lot is compared with single units.
+function stripLot(title) {
+  return String(title || '').replace(/\blot\s*of\s*\(?\d{1,3}\)?/ig, ' ').replace(/\b(?:set|bundle|pack|box)\s*of\s*\(?\d{1,3}\)?/ig, ' ').replace(/\b\d{1,3}\s*(?:pcs|pc|pieces|count|ct|units)\b/ig, ' ').replace(/[|•·,]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 // The search phrase for a model, e.g. "Apple iPhone 14 Pro 128GB".
 function marketQuery(title, specs) {
-  const base = String(title || '').replace(/\s+/g, ' ').trim();
+  const base = stripLot(title);
   const storage = storageOf(specs);
   return storage && !base.toUpperCase().includes(storage) ? `${base} ${storage}` : base;
 }
@@ -36,9 +47,10 @@ function ebayCategory(category, title) {
   return '';
 }
 
-function ebayFilter(group) {
+// Fixed-price only works on leaf categories, so it's left off when eBay picked no category.
+function ebayFilter(group, category) {
   const cond = group === 'parts' ? 'conditionIds:{7000}' : 'conditions:{USED}';
-  return `${cond},buyingOptions:{FIXED_PRICE},itemLocationCountry:US,priceCurrency:USD`;
+  return `${cond}${category ? ',buyingOptions:{FIXED_PRICE}' : ''},itemLocationCountry:US,priceCurrency:USD`;
 }
 
 // What a buyer pays for a listing: item price plus the first shipping option, when given.
@@ -97,11 +109,20 @@ module.exports = { IN_STOCK, condGroup, storageOf, marketQuery, marketKey, ebayC
 
 // ── Precise matching to eBay item specifics ──────────────────────
 // Words in a listing title that mean it isn't the device itself (or not a working one).
-const JUNK = /\b(case|cover|skin|screen protector|tempered glass|box only|empty box|charger only|cable only|for parts|parts only|not working|read description|icloud locked|blacklisted|bad esn|lot of|bundle of|dummy|replica|housing|back glass|lcd|digitizer|motherboard|logic board)\b/i;
-const PARTS_OK = /\b(case|cover|skin|screen protector|tempered glass|box only|empty box|charger only|cable only|dummy|replica)\b/i;
-function junkTitle(title, group) {
+// Titles that aren't the item itself. Device accessory/part words only count for devices
+// (phones, tablets, laptops, consoles): for computer parts a "motherboard" is the product.
+const ALWAYS_JUNK = /\b(box only|empty box|dummy|replica|fake|read description)\b/i;
+const BROKEN = /\b(for parts|parts only|not working|untested|as is|icloud locked|blacklisted|bad esn|faulty|defective)\b/i;
+const DEVICE_ACCESSORY = /\b(case|cover|skin|screen protector|tempered glass|charger only|cable only)\b/i;
+const DEVICE_PART = /\b(housing|back glass|lcd|digitizer|motherboard|logic board|replacement screen)\b/i;
+const DEVICE_CATEGORIES = new Set(['9355', '171485', '111422', '177', '139971']);
+function junkTitle(title, group, category) {
   const t = String(title || '');
-  return group === 'parts' ? PARTS_OK.test(t) : JUNK.test(t);
+  const device = !category || DEVICE_CATEGORIES.has(String(category));
+  if (ALWAYS_JUNK.test(t)) return true;
+  if (device && DEVICE_ACCESSORY.test(t)) return true;
+  if (group === 'parts') return false; // broken devices and their parts are the market here
+  return (device && DEVICE_PART.test(t)) || BROKEN.test(t);
 }
 
 const words = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
@@ -127,7 +148,7 @@ function pickAspect(distributions, namePattern, title) {
 // "128GB" → the way eBay writes storage, e.g. "128 GB".
 function pickStorage(distributions, specs, title) {
   const want = storageOf(specs) || storageOf(title);
-  const aspect = (distributions || []).find(a => /storage capacity|^storage$/i.test(String(a.localizedAspectName || '')));
+  const aspect = (distributions || []).find(a => /storage capacity|^storage$|total capacity|^capacity$|capacity per module/i.test(String(a.localizedAspectName || '')));
   const options = aspect ? (aspect.aspectValueDistributions || []).map(v => String(v.localizedAspectValue || '')).filter(Boolean) : [];
   if (!want) return { value: '', options: options.slice(0, 10) };
   const norm = s => String(s).toUpperCase().replace(/\s+/g, '');
@@ -157,4 +178,4 @@ function aspectFilter(category, match) {
   return parts.length ? `categoryId:${category},${parts.join(',')}` : '';
 }
 
-Object.assign(module.exports, { junkTitle, pickAspect, pickStorage, pickNetwork, aspectFilter });
+Object.assign(module.exports, { junkTitle, pickAspect, pickStorage, pickNetwork, aspectFilter, lotSize, stripLot, DEVICE_CATEGORIES });

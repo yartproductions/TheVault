@@ -18,7 +18,7 @@ test('the Vault page computes the same key as the backend', () => {
   const src = html.match(/\/\/ market-key:start([\s\S]*?)\/\/ market-key:end/);
   assert.ok(src, 'index.html must contain the market-key block');
   const clientKey = new Function(`${src[1]}; return marketKeyOf;`)();
-  for (const [t, s, c] of [['Apple iPhone 14 Pro', '128GB · Midnight', 'Good'], ['Samsung Galaxy S23 Ultra', '256 gb', 'For Parts'], ['iPad 9th gen', '', 'Fair'], ['MacBook Air M2 512GB', '512GB', 'Excellent']]) {
+  for (const [t, s, c] of [['Lot of 4 | SKhynix 64GB', '', 'Good'], ['Lot of 2 | Dell EMC 240GB', 'SAS', 'For Parts'], ['Apple iPhone 14 Pro', '128GB · Midnight', 'Good'], ['Samsung Galaxy S23 Ultra', '256 gb', 'For Parts'], ['iPad 9th gen', '', 'Fair'], ['MacBook Air M2 512GB', '512GB', 'Excellent']]) {
     assert.equal(clientKey({ title: t, specs: s, condition: c }), m.marketKey(t, s, c));
   }
 });
@@ -29,7 +29,8 @@ test('categories are eBay leaf categories', () => {
   assert.equal(m.ebayCategory('Laptop', 'Dell XPS'), '177');
   assert.equal(m.ebayCategory('Audio', 'AirPods'), '');
   assert.match(m.ebayFilter('parts'), /conditionIds:\{7000\}/);
-  assert.match(m.ebayFilter('used'), /conditions:\{USED\}/);
+  assert.match(m.ebayFilter('used', '9355'), /conditions:\{USED\},buyingOptions/);
+  assert.doesNotMatch(m.ebayFilter('used', ''), /buyingOptions/);
 });
 
 test('landed price adds shipping', () => {
@@ -76,6 +77,18 @@ test('junk titles are dropped (parts listings keep broken phones)', () => {
   assert.equal(m.junkTitle('iPhone 14 Pro 128GB iCloud Locked for parts', 'used'), true);
   assert.equal(m.junkTitle('iPhone 14 Pro 128GB cracked screen for parts', 'parts'), false);
   assert.equal(m.junkTitle('iPhone 14 Pro box only', 'parts'), true);
+  assert.equal(m.junkTitle('ASUS ROG Motherboard Z790', 'used', '1244'), false);
+  assert.equal(m.junkTitle('Lot of 4 SK hynix 64GB DDR4 server RAM', 'used', '11211'), false);
+});
+
+test('lots are detected and stripped from the search', () => {
+  assert.equal(m.lotSize('Lot of 4 | SKhynix 64GB'), 4);
+  assert.equal(m.lotSize('Lot of (10) Samsung 32GB DDR4'), 10);
+  assert.equal(m.lotSize('Kingston 2x16GB DDR4 kit'), 2);
+  assert.equal(m.lotSize('Dell EMC 240GB SSD 5 pcs'), 5);
+  assert.equal(m.lotSize('Apple iPhone 14 Pro 128GB'), 1);
+  assert.equal(m.marketQuery('Lot of 2 | Dell EMC 240GB', ''), 'Dell EMC 240GB');
+  assert.equal(m.marketKey('Lot of 2 | Dell EMC 240GB', '', 'Good'), m.marketKey('Dell EMC 240GB', '', 'Good'));
 });
 
 test('picks the eBay Model value that matches the Vault title', () => {
