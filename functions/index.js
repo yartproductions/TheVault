@@ -7,6 +7,7 @@ const { HttpsError, onCall, onRequest } = require('firebase-functions/v2/https')
 const { defineSecret } = require('firebase-functions/params');
 const { vaultSku, listingUnits } = require('./sku');
 const orders = require('./orders');
+const listing = require('./listing');
 
 initializeApp();
 setGlobalOptions({ region: 'us-east1', maxInstances: 5 });
@@ -17,6 +18,8 @@ const BOOTSTRAP_OWNERS = new Set(['paulckinckay@gmail.com', 'kohlindersjohn@gmai
 const SHOPIFY_SHOP = defineSecret('SHOPIFY_SHOP');
 const SHOPIFY_CLIENT_ID = defineSecret('SHOPIFY_CLIENT_ID');
 const SHOPIFY_CLIENT_SECRET = defineSecret('SHOPIFY_CLIENT_SECRET');
+const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
+const LISTING_MODEL = 'claude-sonnet-5-5';
 
 function signedIn(request) {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in to the vault first.');
@@ -256,7 +259,87 @@ async function setAvailable(connection, inventoryItemId, quantity) {
   checkUserErrors(data.inventorySetQuantities);
 }
 
-exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET], timeoutSeconds: 60 }, logged('shopifySaveDraft', async request => {
+// ── Listing generator: lister notes + Thoky rulebook → final title, HTML and metafields ──
+async function anthropic(body) {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY.value().trim(), 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify(body)
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const msg = (json.error && json.error.message) || `HTTP ${response.status}`;
+    const err = new Error(`Listing generator: ${msg}`);
+    err.status = response.status;
+    throw err;
+  }
+  return json;
+}
+
+// Asks Claude for the listing. Web search lets it confirm model numbers and MPNs, as the
+// rulebook's research rules ask; if search isn't available on the account it runs without.
+async function claudeListing(inputs) {
+  const { system, user } = listing.buildPrompt(inputs);
+  const base = { model: LISTING_MODEL, max_tokens: 4000, system };
+  let messages = [{ role: 'user', content: user }];
+  let tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 }];
+  let reply;
+  for (let turn = 0; turn < 4; turn++) {
+    try { reply = await anthropic({ ...base, messages, ...(tools ? { tools } : {}) }); }
+    catch (error) {
+      if (tools && error.status === 400 && /tool|web_search/i.test(error.message)) { tools = null; turn--; continue; }
+      throw error;
+    }
+    if (reply.stop_reason !== 'pause_turn') break;
+    messages = [...messages, { role: 'assistant', content: reply.content }];
+  }
+  const text = (reply.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+  const searches = (reply.usage && reply.usage.server_tool_use && reply.usage.server_tool_use.web_search_requests) || 0;
+  return { out: listing.extractJson(text), searches };
+}
+
+async function generateListing(itemRef, item) {
+  const packet = item.packet || {};
+  const inputs = listing.listingInputs(item, packet);
+  const hash = listing.inputsHash(inputs);
+  const settingsSnap = await db.doc('meta/settings').get();
+  const standardWear = ((settingsSnap.exists && settingsSnap.data().shopify) || {}).standardWear !== false;
+  const { out, searches } = await claudeListing(inputs);
+  const result = listing.normalizeListing(out, inputs);
+  const generated = {
+    ...result,
+    html: listing.renderHtml(result, { standardWear }),
+    inputsHash: hash,
+    inputs,
+    model: LISTING_MODEL,
+    searches,
+    at: new Date().toISOString()
+  };
+  await itemRef.set({ packet: { generated } }, { merge: true });
+  return generated;
+}
+
+// Shopify metafields from the generated listing: only real values, single-line text.
+function generatedMetafields(gen) {
+  const all = { ...(gen.metafields || {}), ...(gen.ebay || {}) };
+  return Object.entries(all)
+    .filter(([, v]) => String(v || '').trim())
+    .map(([key, value]) => ({ namespace: 'custom', key, type: 'single_line_text_field', value: String(value).replace(/\s+/g, ' ').trim().slice(0, 255) }));
+}
+
+// "Generate listing" in the packet: preview before anything goes to Shopify.
+exports.shopifyGenerateListing = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 180, memory: '512MiB' }, logged('shopifyGenerateListing', async request => {
+  await memberFor(request);
+  const sku = vaultSku(request.data && request.data.code);
+  const itemRef = db.doc(`items/${sku}`);
+  const snap = await itemRef.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Vault item not found.');
+  const item = snap.data();
+  if (!String((item.packet || {}).description || item.defect || '').trim()) throw new HttpsError('failed-precondition', 'Write the lister notes first: what it is, what was tested, defects and what\'s included.');
+  return await generateListing(itemRef, { ...item, code: sku });
+}));
+
+exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET, ANTHROPIC_API_KEY], timeoutSeconds: 240, memory: '512MiB' }, logged('shopifySaveDraft', async request => {
   await memberFor(request);
   const sku = vaultSku(request.data && request.data.code);
   const itemRef = db.doc(`items/${sku}`);
@@ -274,17 +357,24 @@ exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, S
   if (!quantity) throw new HttpsError('failed-precondition', 'Every unit in this listing is sold or archived.');
 
   const connection = await shopifyToken();
+  // The lister's notes are plain English, not final copy: the listing is generated from them with
+  // the Thoky rulebook (or reused if nothing changed since the last "Generate listing").
+  let gen = packet.generated;
+  if (!gen || gen.inputsHash !== listing.inputsHash(listing.listingInputs({ ...item, code: sku }, packet))) {
+    gen = await generateListing(itemRef, { ...item, code: sku });
+  }
+  const finalTitle = gen.title || title;
   const productInput = {
-    title,
-    descriptionHtml: String(packet.description || item.defect || '').split(/\n{2,}/).map(p => `<p>${p.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])).replace(/\n/g, '<br>')}</p>`).join(''),
-    productType: String(item.category || 'Other'),
-    vendor: title.split(/\s+/)[0],
-    tags: ['obsidian-vault', sku],
-    metafields: [{ namespace: 'custom', key: 'vault_record', type: 'single_line_text_field', value: sku }]
+    title: finalTitle,
+    descriptionHtml: gen.html,
+    productType: gen.type || String(item.category || 'Other'),
+    vendor: (gen.metafields && gen.metafields.brand) || finalTitle.split(/\s+/)[0],
+    tags: ['obsidian-vault', sku, gen.type, gen.grade].filter(Boolean),
+    metafields: [{ namespace: 'custom', key: 'vault_record', type: 'single_line_text_field', value: sku }, ...generatedMetafields(gen)]
   };
   const media = (packet.photos || []).filter(url => /^https:\/\//i.test(url)).slice(0, 12).map((url, index) => ({
     originalSource: url,
-    alt: `${title} photo ${index + 1}`,
+    alt: `${(packet.generated && packet.generated.title) || title} photo ${index + 1}`,
     mediaContentType: 'IMAGE'
   }));
 

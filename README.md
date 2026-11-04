@@ -69,6 +69,17 @@ With Firebase Functions deployed, Settings can switch Shopify to **Create Shopif
 
 **Update Shopify draft / listing** re-syncs title, price, photos and quantity at any time.
 
+### Listing descriptions (SYG rulebook)
+
+The packet's **Lister notes** are plain English, not final copy: what the item is, what was tested, every defect and what's included, like you'd tell a coworker. **Generate listing** (also run automatically on Create Shopify draft) has Claude write the final listing from those notes plus the record's details, following the SYG "Thoky" listing rulebook in `functions/listing.js`:
+- Title in the category format (phones: lock status → brand → model → model no. → MPN → storage → BH% → color → condition), max 80 characters, `-inch` screen sizes, no letter grades or banned words.
+- Condition graded in words (New / Used – Good / Used – Fair / For Parts) from the notes; the Vault's "For Parts" always wins; For Parts ends with "Sold for parts or repair."; optional standard wear text for Used items (Settings).
+- The eBay-safe HTML table is rendered by the Vault itself (navy Product Details / Shipping & Returns bars, alternating rows, fixed "Free Shipping" and the chosen return policy), so the template never drifts.
+- `custom.*` metafields per type plus eBay readiness fields (category ID only from the confirmed list, condition code, returns).
+- Missing details, values filled from research (it can do a few web lookups for model numbers and MPNs) and conflicts are shown in the preview.
+
+Needs the `ANTHROPIC_API_KEY` Firebase secret (an Anthropic API key; a listing costs a few cents). A listing is regenerated only when the notes or details change.
+
 ### Sales sync
 - **Vault → Shopify:** recording a sale or a return in the Vault resets Shopify's quantity to the units still in stock. At zero the product goes back to Draft so it leaves the store.
 - **Shopify → Vault:** press **Settings → Shopify → Connect Shopify orders** once. Every paid Shopify order then marks the sold units **Sold**, books each sale (price after discounts, Shopify fee 2.9% + $0.30, your flat shipping) with its bookkeeping entry, and logs it in Activity. Each order is recorded exactly once, even if Shopify sends it twice. Lines without a Vault SKU, or with more quantity than is in stock, show up in Settings → System log.
