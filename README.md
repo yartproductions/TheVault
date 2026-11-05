@@ -78,7 +78,14 @@ The packet's **Lister notes** are plain English, not final copy: what the item i
 - `custom.*` metafields per type plus eBay readiness fields (category ID only from the confirmed list, condition code, returns).
 - Missing details, values filled from research (it can do a few web lookups for model numbers and MPNs) and conflicts are shown in the preview.
 
-Needs the `ANTHROPIC_API_KEY` Firebase secret (an Anthropic API key; a listing costs a few cents). A listing is regenerated only when the notes or details change.
+**Provider switch** (Settings → Shopify → Listing generator): Claude (Anthropic) or OpenAI, or Auto (Claude when its key is set, otherwise OpenAI). Both get the same rulebook prompt and the same checks; OpenAI uses the Responses API with web search and automatic prompt caching, model set in Settings (default `gpt-5.4`). The preview shows which provider and model wrote it and the cost.
+
+Both secrets must exist for the functions to deploy; set the one you don't use to `none`:
+```
+npx firebase-tools functions:secrets:set OPENAI_API_KEY      # paste the OpenAI key
+npx firebase-tools functions:secrets:set ANTHROPIC_API_KEY   # paste the Anthropic key, or type: none
+```
+A listing costs a few cents and is regenerated only when the notes or details change.
 
 ### Sales sync
 - **Vault → Shopify:** recording a sale or a return in the Vault resets Shopify's quantity to the units still in stock. At zero the product goes back to Draft so it leaves the store.

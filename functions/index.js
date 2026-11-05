@@ -21,7 +21,9 @@ const SHOPIFY_SHOP = defineSecret('SHOPIFY_SHOP');
 const SHOPIFY_CLIENT_ID = defineSecret('SHOPIFY_CLIENT_ID');
 const SHOPIFY_CLIENT_SECRET = defineSecret('SHOPIFY_CLIENT_SECRET');
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
-const LISTING_MODEL = 'claude-sonnet-5-5';
+const OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
+const llm = require('./llm');
+const LISTING_MODEL = llm.DEFAULT_MODELS.anthropic;
 
 function signedIn(request) {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in to the vault first.');
@@ -308,23 +310,73 @@ async function claudeListing(inputs) {
   return { out: listing.extractJson(text), searches, usage, cost: listing.estimateCost(usage, searches, ttl), ttl };
 }
 
+async function openai(body) {
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_API_KEY.value().trim()}` },
+    body: JSON.stringify(body)
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const msg = (json.error && json.error.message) || `HTTP ${response.status}`;
+    const err = new Error(`Listing generator (OpenAI): ${msg}`);
+    err.status = response.status;
+    throw err;
+  }
+  return json;
+}
+
+// Same rulebook prompt and output format as Claude, through OpenAI's Responses API.
+// Web search confirms model numbers; if the model or account rejects a feature it's dropped and retried.
+async function openaiListing(inputs, model) {
+  const prompt = listing.buildPrompt(inputs);
+  const opts = {};
+  let reply;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try { reply = await openai(llm.openaiBody(prompt, model, opts)); break; }
+    catch (error) {
+      const part = error.status === 400 && llm.openaiRejected(error.message);
+      if (part && opts[part] !== false) { opts[part] = false; continue; }
+      throw error;
+    }
+  }
+  const { text, searches, usage, incomplete } = llm.parseOpenai(reply);
+  if (incomplete && !/listing_json/.test(text)) throw new Error(`Listing generator (OpenAI) stopped early: ${incomplete}.`);
+  const { cost, estimate } = llm.openaiCost(usage, searches, model);
+  return { out: listing.extractJson(text), searches, usage, cost, costEstimate: estimate };
+}
+
+// Picks Claude or OpenAI from Settings → Shopify → Listing generator (auto = whichever key is set).
+function secretValue(secret) { try { return secret.value(); } catch (e) { return ''; } }
+async function writeListing(inputs, shopifySettings) {
+  const provider = llm.pickProvider(shopifySettings.listingProvider || 'auto', { anthropic: secretValue(ANTHROPIC_API_KEY), openai: secretValue(OPENAI_API_KEY) });
+  if (provider === 'openai') {
+    const model = llm.modelFor('openai', shopifySettings.openaiModel);
+    return { provider, model, ...(await openaiListing(inputs, model)) };
+  }
+  return { provider, model: LISTING_MODEL, ...(await claudeListing(inputs)) };
+}
+
 async function generateListing(itemRef, item) {
   const packet = item.packet || {};
   const inputs = listing.listingInputs(item, packet);
   const hash = listing.inputsHash(inputs);
   const settingsSnap = await db.doc('meta/settings').get();
-  const standardWear = ((settingsSnap.exists && settingsSnap.data().shopify) || {}).standardWear !== false;
-  const { out, searches, usage, cost } = await claudeListing(inputs);
+  const shopifySettings = (settingsSnap.exists && settingsSnap.data().shopify) || {};
+  const standardWear = shopifySettings.standardWear !== false;
+  const { out, searches, usage, cost, costEstimate, provider, model } = await writeListing(inputs, shopifySettings);
   const result = listing.normalizeListing(out, inputs);
   const generated = {
     ...result,
     html: listing.renderHtml(result, { standardWear }),
     inputsHash: hash,
     inputs,
-    model: LISTING_MODEL,
+    provider,
+    model,
     searches,
     usage,
     cost,
+    costEstimate: !!costEstimate,
     at: new Date().toISOString()
   };
   await itemRef.set({ packet: { generated } }, { merge: true });
@@ -340,7 +392,7 @@ function generatedMetafields(gen) {
 }
 
 // "Generate listing" in the packet: preview before anything goes to Shopify.
-exports.shopifyGenerateListing = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 180, memory: '512MiB' }, logged('shopifyGenerateListing', async request => {
+exports.shopifyGenerateListing = onCall({ secrets: [ANTHROPIC_API_KEY, OPENAI_API_KEY], timeoutSeconds: 180, memory: '512MiB' }, logged('shopifyGenerateListing', async request => {
   await memberFor(request);
   const sku = vaultSku(request.data && request.data.code);
   const itemRef = db.doc(`items/${sku}`);
@@ -351,7 +403,7 @@ exports.shopifyGenerateListing = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutS
   return await generateListing(itemRef, { ...item, code: sku });
 }));
 
-exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET, ANTHROPIC_API_KEY], timeoutSeconds: 240, memory: '512MiB' }, logged('shopifySaveDraft', async request => {
+exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET, ANTHROPIC_API_KEY, OPENAI_API_KEY], timeoutSeconds: 240, memory: '512MiB' }, logged('shopifySaveDraft', async request => {
   await memberFor(request);
   const sku = vaultSku(request.data && request.data.code);
   const itemRef = db.doc(`items/${sku}`);
