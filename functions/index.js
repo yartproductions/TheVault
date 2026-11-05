@@ -810,13 +810,22 @@ exports.shopifyConnectOrders = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_I
   const existing = await shopifyGraphql(connection,
     `query Hooks { webhookSubscriptions(first: 100) { nodes { id topic uri } } }`);
   const have = new Set(existing.webhookSubscriptions.nodes.filter(n => n.uri === uri).map(n => n.topic));
+  // Each topic separately: Shopify can refuse one (orders need extra permission) without blocking the others.
+  const failed = [];
   for (const topic of topics.filter(t => !have.has(t))) {
-    const data = await shopifyGraphql(connection,
-      `mutation Subscribe($topic: WebhookSubscriptionTopic!, $sub: WebhookSubscriptionInput!) { webhookSubscriptionCreate(topic: $topic, webhookSubscription: $sub) { webhookSubscription { id uri } userErrors { field message } } }`,
-      { topic, sub: { uri, format: 'JSON' } });
-    checkUserErrors(data.webhookSubscriptionCreate);
+    try {
+      const data = await shopifyGraphql(connection,
+        `mutation Subscribe($topic: WebhookSubscriptionTopic!, $sub: WebhookSubscriptionInput!) { webhookSubscriptionCreate(topic: $topic, webhookSubscription: $sub) { webhookSubscription { id uri } userErrors { field message } } }`,
+        { topic, sub: { uri, format: 'JSON' } });
+      checkUserErrors(data.webhookSubscriptionCreate);
+      have.add(topic);
+    } catch (error) { failed.push({ topic, message: String(error.message || error) }); }
   }
-  return { connected: true, uri, topics, products: true, already: topics.every(t => have.has(t)) };
+  if (failed.length) await writeSyslog('warn', 'shopifyConnectOrders', `Shopify refused: ${failed.map(f => f.topic).join(', ')}`, failed.map(f => `${f.topic}: ${f.message}`).join('\n'));
+  const ordersOk = have.has('ORDERS_PAID');
+  const productSync = have.has('PRODUCTS_UPDATE') && have.has('PRODUCTS_DELETE');
+  if (!ordersOk && !productSync) throw new HttpsError('failed-precondition', `Shopify refused every subscription: ${failed.map(f => `${f.topic} (${f.message})`).join('; ')}`);
+  return { connected: true, uri, orders: ordersOk, products: productSync, failed, already: !failed.length && topics.every(t => have.has(t)) };
 }));
 
 // ── eBay market collector ────────────────────────────────────────
