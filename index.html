@@ -1173,7 +1173,12 @@ function pMarket() {
       <div style="display:flex;gap:10px;align-items:flex-start">${srcTag('est')}<span class="sm mut">Worked out from eBay snapshots: listings that disappear are counted as sold. Most did; some just ended.</span></div>
       <div style="display:flex;gap:10px;align-items:flex-start">${srcTag('vault')}<span class="sm mut">Your real records: what you have, what you paid, what it sold for and how long it took.</span></div></div></section>`;
 
-  const cards = docs.map(d => {
+  // Search: every word must appear in the model name, category, matched details, or one of your stock's codes/titles.
+  const terms = String(M.q || '').toLowerCase().split(/\s+/).filter(Boolean);
+  const haystack = d => [d.label, d.key, d.categoryName, ...(d.codes || []), ...Object.values(d.match || {}).flatMap(v => Array.isArray(v) ? v.map(x => x && (x.value || x)) : [v]).filter(x => typeof x === 'string'),
+    ...itemsArr().filter(i => marketKeyOf(i) === d.key).flatMap(i => [i.code, i.title, i.specs])].join(' ').toLowerCase();
+  const shown = terms.length ? docs.filter(d => { const h = haystack(d); return terms.every(t => h.includes(t)); }) : docs;
+  const cards = shown.map(d => {
     const l = d.last || {}; const v = vaultModelStats(d.key); const sp = suggestPrices(d); const sd = speedOf(d);
     const prev = medianWeekAgo(d); const trend = prev && l.median ? (l.median - prev) / prev * 100 : null;
     const pf = sp ? profitAt(sp.fast, d.key) : null; const conf = confidenceOf(d);
@@ -1212,12 +1217,15 @@ function pMarket() {
       <div class="card pad-s"><div class="sm mut2">Hot right now</div><div class="mono" style="font-size:26px;margin-top:4px">${hot} <span class="sm mut2" style="font-family:inherit">of ${docs.length} models</span></div><div class="sm mut2">under 2 weeks of supply</div></div>
     </div>
     ${legend}
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <div style="position:relative;flex:1 1 320px"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#7D8B85;display:flex">${ic('search', 16)}</span><input class="in" id="mk-q" type="search" data-bind="ui.market.q" value="${esc(M.q || '')}" placeholder="Search models — name, brand, part number, VR code…" aria-label="Search market models" style="width:100%;padding-left:36px"></div>
+      ${terms.length ? `<span class="sm mut2">${shown.length} of ${docs.length} model${docs.length === 1 ? '' : 's'}</span><button class="btn sm" data-act="mkClearQ">Clear</button>` : ''}</div>
     <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center">
       <div class="seg" aria-label="Sort models">${[['speed', 'Fastest selling'], ['profit', 'Most profit'], ['stock', 'Most in stock']].map(([k, l]) => `<button class="${M.sort === k ? 'on' : ''}" data-act="mkSort" data-v="${k}">${l}</button>`).join('')}</div>
       <div class="acts" style="align-items:stretch;flex:1 1 420px;justify-content:flex-end"><input class="in" id="mk-title" data-bind="ui.market.title" value="${esc(M.title)}" placeholder="Watch another model, e.g. Apple iPhone 15 Pro 256GB" style="flex:1 1 260px;max-width:420px">
         <div class="seg">${['Good', 'For Parts'].map(c => `<button class="${M.condition === c ? 'on' : ''}" data-act="mkCond" data-v="${c}">${c === 'Good' ? 'Used' : 'Parts'}</button>`).join('')}</div>
         <button class="btn" data-act="mkAdd" ${M.busy ? 'disabled' : ''}>${ic('plus', 16, 2.2)}${M.busy === 'add' ? 'Adding…' : 'Watch'}</button></div></div>
-    ${cards || emptyState('No models yet. Press Refresh now to build the list from your stock, or watch a model above.')}`;
+    ${cards || (terms.length ? emptyState(`No models match “${esc(M.q)}”. Try fewer words, or watch it as a new model above.`) : emptyState('No models yet. Press Refresh now to build the list from your stock, or watch a model above.'))}`;
 }
 function marketBox(it) {
   if (!(S.mode === 'firebase' && S.fb) || ['sold', 'arch'].includes(it.status)) return '';
@@ -1828,6 +1836,7 @@ const ACT = {
     catch (e) { toast((e && e.message) || 'Could not reset the match.', 'err'); }
     finally { M.busy = ''; render(); }
   },
+  mkClearQ: () => { S.ui.market.q = ''; render(); const el = document.getElementById('mk-q'); if (el) el.focus(); },
   mkSort: el => { (S.ui.market || (S.ui.market = { title: '', condition: 'Good', busy: '' })).sort = el.dataset.v; render(); },
   mkCond: el => { (S.ui.market || (S.ui.market = { title: '', condition: 'Good', busy: '' })).condition = el.dataset.v; render(); },
   mkRefresh: async el => {
