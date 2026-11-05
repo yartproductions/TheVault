@@ -443,9 +443,14 @@ async function saveDraftLocked(itemRef, sku, item, packet, title, price, units, 
     gen = await generateListing(itemRef, { ...item, code: sku });
   }
   const finalTitle = gen.title || title;
+  // Rebuilt from the saved listing (no AI call) so template changes reach existing listings on Update.
+  const settingsSnap = await db.doc('meta/settings').get();
+  const standardWear = (((settingsSnap.exists && settingsSnap.data().shopify) || {}).standardWear) !== false;
+  let descriptionHtml = gen.html;
+  try { if (gen.rows && gen.grade) descriptionHtml = listing.renderHtml(gen, { standardWear }); } catch (e) { descriptionHtml = gen.html; }
   const productInput = {
     title: finalTitle,
-    descriptionHtml: gen.html,
+    descriptionHtml,
     productType: gen.type || String(item.category || 'Other'),
     vendor: (gen.metafields && gen.metafields.brand) || finalTitle.split(/\s+/)[0],
     tags: ['obsidian-vault', sku, gen.type, gen.grade].filter(Boolean),

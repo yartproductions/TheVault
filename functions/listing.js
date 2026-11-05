@@ -236,7 +236,9 @@ function renderHtml(listing, opts = {}) {
   const header = text => `<tr><th colspan="2" style="background-color:#1F4E79;color:#ffffff;font-weight:bold;text-align:left;padding:8px;">${esc(text)}</th></tr>`;
   const cell = r => r.list ? (r.list.length > 1 ? `<ul style="margin:0;padding-left:18px;">${r.list.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : esc(r.list[0] || '')) : esc(r.value);
   const row = (r, i) => `<tr style="background-color:${i % 2 ? '#f9f9f9' : '#ffffff'};"><td style="padding:8px;border:1px solid #dddddd;font-weight:bold;width:35%;">${esc(r.label)}</td><td style="padding:8px;border:1px solid #dddddd;">${cell(r)}</td></tr>`;
-  return `<div style="font-family:Arial,sans-serif;max-width:800px;"><table style="width:100%;border-collapse:collapse;font-size:14px;color:#333333;"><tbody>`
+  // The grade class lets the eBay template (Marketplace Connect) colour its condition ring; Shopify ignores it.
+  const gradeClass = { 'New': 'gf-report-new', 'Used – Good': 'gf-report-good', 'Used – Fair': 'gf-report-fair', 'For Parts': 'gf-report-parts' }[listing.grade] || 'gf-report-good';
+  return `<div class="${gradeClass}" style="font-family:Arial,sans-serif;max-width:800px;"><table style="width:100%;border-collapse:collapse;font-size:14px;color:#333333;"><tbody>`
     + header('Product Details') + rows.map(row).join('')
     + header('Shipping & Returns') + row({ label: 'Shipping', value: 'Free Shipping' }, 0) + row({ label: 'Return Policy', value: listing.returnPolicy }, 1)
     + `</tbody></table></div>`;

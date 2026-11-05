@@ -31,13 +31,14 @@ test("the lister's For Parts wins and the For Parts sentence is added", () => {
   assert.equal(out.grade, 'For Parts');
   assert.match(out.conditionText, /^For Parts; cracked back glass, for parts camera\. Sold for parts or repair\.$/);
   assert.equal(out.ebay.ebay_condition_code, '7000');
+  assert.match(L.renderHtml(out), /^<div class="gf-report-parts"/);
   assert.ok(out.flags.some(f => /For Parts/.test(f)));
 });
 
 test('HTML follows the template: navy bars, fixed rows, escaped values, no scripts', () => {
   const listing = L.normalizeListing({ type: 'RAM', title: 't', grade: 'Used – Good', condition_text: 'Used – Good; tested <script>x</script>', rows: [{ label: 'Brand', value: 'SK hynix' }], included: 'Modules only' }, inputs());
   const html = L.renderHtml(listing, { standardWear: true });
-  assert.match(html, /^<div style="font-family:Arial,sans-serif;max-width:800px;">/);
+  assert.match(html, /^<div class="gf-report-good" style="font-family:Arial,sans-serif;max-width:800px;">/);
   assert.equal((html.match(/#1F4E79/g) || []).length, 2);
   assert.match(html, />Product Details</);
   assert.match(html, />Shipping &amp; Returns</);
