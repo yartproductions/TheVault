@@ -546,6 +546,7 @@ function render() {
   $('#modal').innerHTML = S.modal ? modalHtml() : '';
   if (keep) { const el = document.getElementById(keep.id); if (el) { el.focus({ preventScroll: true }); try { if (keep.s != null) el.setSelectionRange(keep.s, keep.e); } catch (e) {} } }
   paintSync(); paintToasts();
+  if (!catchUpStatuses.ran && S.owner && itemsArr().length) { catchUpStatuses.ran = true; setTimeout(catchUpStatuses, 800); }
 }
 function paintSync() {
   const el = $('#syncline'); if (!el) return;
@@ -1420,14 +1421,26 @@ const NUMERIC = ['resale', 'cost', 'confidence', 'packet.price', 'sale.price', '
 // → Prepared once its Shopify draft is ready. Only ever moves forward, and never touches
 // Listed, Sold or Archived items (those change through Activate, sales and archiving).
 const AUTO_ORDER = ['new', 'proc', 'prep'];
+const AUTO_BUSY = new Set();
 async function autoStatus(code, to, why) {
   const it = S.items[code]; if (!it) return;
   const from = AUTO_ORDER.indexOf(it.status), target = AUTO_ORDER.indexOf(to);
-  if (from < 0 || target <= from) return;
+  if (from < 0 || target <= from || AUTO_BUSY.has(code + to)) return;
+  AUTO_BUSY.add(code + to); setTimeout(() => AUTO_BUSY.delete(code + to), 5000);
   try {
     await write(() => ref('items/' + code).update({ status: to, updatedAt: nowISO(), updatedBy: S.owner }), code);
     logAct('VR', why, code, it.title, '', [code], STATUS[it.status][0], STATUS[to][0]);
   } catch (e) {}
+}
+// Items already worked on (listing notes, photos, price, written listing, Shopify draft) but still New.
+function catchUpStatuses() {
+  if (!S.owner || S.needLogin) return;
+  for (const it of itemsArr()) {
+    if (it.status !== 'new') continue;
+    const pk = it.packet || {};
+    const worked = String(pk.description || '').trim() || (pk.photos || []).length || num(pk.price) > 0 || pk.generated || pk.shopifyId || (pk.units || []).length > 1;
+    if (worked) autoStatus(it.code, pk.shopifyId ? 'prep' : 'proc', pk.shopifyId ? 'prepared for listing' : 'started working on');
+  }
 }
 async function commitItemField(code, f, raw) {
   const it = S.items[code]; if (!it) return;
@@ -1946,7 +1959,7 @@ document.addEventListener('input', ev => {
     if (p.startsWith('ui.intake.f.') && S.ui.intake) { S.ui.intake.flash = ''; S.ui.intake.ferr = ''; }
     if (el.tagName !== 'SELECT' && !p.startsWith('lock.') && !p.startsWith('modal')) renderSoon();
   }
-  if (el.dataset.ifield) { (S.ui.edit[el.dataset.code] = S.ui.edit[el.dataset.code] || {})[el.dataset.ifield] = el.value; }
+  if (el.dataset.ifield) { (S.ui.edit[el.dataset.code] = S.ui.edit[el.dataset.code] || {})[el.dataset.ifield] = el.value; if (el.dataset.ifield !== 'status') autoStatus(el.dataset.code, 'proc', 'started working on'); }
 });
 document.addEventListener('change', ev => {
   const el = ev.target;
