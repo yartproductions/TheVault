@@ -896,6 +896,7 @@ function packetCard(it, pk, photos, up, sh) {
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><h2>Shopify listing packet ${pk.code ? codeChip(pk.code) : ''}</h2><div class="sm mut2" style="margin-top:4px">JPEG, PNG or WebP · up to 12 photos · large photos are resized automatically</div></div>
       <span style="font-size:11px;font-weight:600;letter-spacing:1.4px;color:${live ? '#06120D' : pk.shopifyId ? '#5FE6AC' : '#F2C063'};padding:5px 10px;border-radius:6px;background:${live ? '#3DDC97' : pk.shopifyId ? '#0F2A1F' : '#2B2312'}">${soldOut ? 'SOLD OUT' : live ? 'ACTIVE ON SHOPIFY' : pk.shopifyId ? 'SHOPIFY DRAFT' : 'NOT ON SHOPIFY'}</span></div>
     ${live && pk.shopifyPublishError ? `<div class="notice bad"><div><b>Active on Shopify but not visible to buyers.</b> ${esc(pk.shopifyPublishError)} After fixing it, press Update Shopify listing.</div></div>` : live && (pk.shopifyChannels || []).length ? `<div class="sm mut2">Visible on: ${pk.shopifyChannels.map(esc).join(', ')}</div>` : ''}
+    ${!pk.shopifyId && pk.shopifyDeletedAt ? `<div class="notice"><div><b>The Shopify product was deleted</b> ${agoText(pk.shopifyDeletedAt)}. Its units went back to Prepared. Press <b>Create Shopify draft</b> to put it on Shopify again.</div></div>` : ''}
     ${parent ? `<div class="notice info"><div>This unit is included in the Shopify listing for <a href="#/item/${encodeURIComponent(it.listedIn)}">${esc(it.listedIn)}</a>. Manage photos, quantity and Shopify from that record.</div></div>` : ''}
     <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px">${tiles}${busy}${drop}</div>
     <div class="grid g4" style="gap:14px">${fIn(it, 'packet.title', 'Working title <span class="opt">optional — the final title is generated</span>', { cls: 'span3', icon: 'tag', ph: it.title })}${fIn(it, 'packet.price', 'Price', { money: 1, icon: 'cash', ph: it.resale })}
@@ -1355,8 +1356,8 @@ function pSettings() {
       <div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="min-width:220px;flex:1"><b style="font-size:14px">Listing generator</b><div class="sm mut2" style="margin-top:4px">Which AI writes the Shopify title and description from the rulebook. <b>Auto</b> uses Claude when its key is set, otherwise OpenAI. Keys live only in Firebase secrets.</div></div>
         <div class="seg">${[['auto', 'Auto'], ['anthropic', 'Claude'], ['openai', 'OpenAI']].map(([k, l]) => `<button class="${(sh.listingProvider || 'auto') === k ? 'on' : ''}" data-act="shProvider" data-v="${k}">${l}</button>`).join('')}</div></div>
         ${(sh.listingProvider || 'auto') !== 'anthropic' ? `<div class="grid g2 stack">${sf('shopify.openaiModel', 'OpenAI model', { ph: 'gpt-5.4', mono: 1 })}<div class="sm mut2" style="align-self:center;line-height:1.5">Leave blank for <span class="mono">gpt-5.4</span>. Cheaper: <span class="mono">gpt-5.4-mini</span>.</div></div>` : ''}</div>
-      <div class="card pad-s" style="background:var(--card2);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="min-width:220px;flex:1"><b style="font-size:14px">Sales sync</b><div class="sm mut2" style="margin-top:4px">Vault sales and returns update Shopify's quantity automatically (back to Draft at zero). Connect orders so paid Shopify orders mark units Sold and book the sale here.${sh.ordersConnected ? ' <span style="color:#5FE6AC">● Orders connected</span>' : ''}</div></div>
-        <button class="btn ${sh.ordersConnected ? '' : 'pri'}" data-act="shConnectOrders">${ic('sync', 16)}${sh.ordersConnected ? 'Reconnect orders' : 'Connect Shopify orders'}</button></div>` : ''}
+      <div class="card pad-s" style="background:var(--card2);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="min-width:220px;flex:1"><b style="font-size:14px">Sales sync</b><div class="sm mut2" style="margin-top:4px">Vault sales and returns update Shopify's quantity automatically (back to Draft at zero). Connect so paid Shopify orders mark units Sold, and products deleted or switched to Draft/Active in Shopify update the Vault.${sh.productsConnected ? ' <span style="color:#5FE6AC">● Orders and products connected</span>' : sh.ordersConnected ? ' <span style="color:#F2C063">● Orders only — press Reconnect to add product sync</span>' : ''}</div></div>
+        <button class="btn ${sh.productsConnected ? '' : 'pri'}" data-act="shConnectOrders">${ic('sync', 16)}${sh.productsConnected ? 'Reconnect' : sh.ordersConnected ? 'Reconnect to add product sync' : 'Connect Shopify sync'}</button></div>` : ''}
       <div class="grid g2 stack" style="gap:16px">
         <div class="notice info" style="flex-direction:column;gap:6px"><b>Today — Export mode</b><span>Every listing packet has <b>Shopify CSV</b> and <b>Photos (.zip)</b> buttons. In any store’s admin: <i>Products → Import</i> the CSV, then drag the photos onto the product. Nothing here is tied to a particular store.</span></div>
         <div class="notice" style="flex-direction:column;gap:6px"><b>Direct draft creation</b><span>Firebase Functions keeps the Shopify client secret off this website. The Vault sends the permanent VR code; the function reads the saved packet, creates or updates the Shopify draft, attaches its photos, sets quantity to 1, and returns the Shopify admin link.</span></div></div></section>
@@ -1415,6 +1416,19 @@ function confirmBox(o) { return new Promise(res => { S.modal = { kind: 'confirm'
 // ── item writes ───────────────────────────────────────────────────
 const FIELD_LABEL = { title: 'title', category: 'category', condition: 'condition', specs: 'specs', serial: 'serial', status: 'status', bin: 'location', customerId: 'seller', source: 'lead source', acquired: 'acquired date', confidence: 'confidence score', defect: 'defect description', notes: 'notes', resale: 'expected resale', cost: 'purchase cost' };
 const NUMERIC = ['resale', 'cost', 'confidence', 'packet.price', 'sale.price', 'sale.fees', 'sale.ship'];
+// Status follows the work: New → Processing as soon as someone works on the item,
+// → Prepared once its Shopify draft is ready. Only ever moves forward, and never touches
+// Listed, Sold or Archived items (those change through Activate, sales and archiving).
+const AUTO_ORDER = ['new', 'proc', 'prep'];
+async function autoStatus(code, to, why) {
+  const it = S.items[code]; if (!it) return;
+  const from = AUTO_ORDER.indexOf(it.status), target = AUTO_ORDER.indexOf(to);
+  if (from < 0 || target <= from) return;
+  try {
+    await write(() => ref('items/' + code).update({ status: to, updatedAt: nowISO(), updatedBy: S.owner }), code);
+    logAct('VR', why, code, it.title, '', [code], STATUS[it.status][0], STATUS[to][0]);
+  } catch (e) {}
+}
 async function commitItemField(code, f, raw) {
   const it = S.items[code]; if (!it) return;
   let v = NUMERIC.includes(f) ? num(raw) : String(raw).trim(); if (f === 'confidence') v = Math.max(0, Math.min(100, Math.round(v)));
@@ -1426,6 +1440,7 @@ async function commitItemField(code, f, raw) {
   try {
     await write(() => ref('items/' + code).update(patch), it.code);
     delete (S.ui.edit[code] || {})[f];
+    if (f !== 'status') autoStatus(code, 'proc', 'started working on');
     if (f === 'status') logAct('VR', 'changed status of', code, it.title, '', [], STATUS[old] ? STATUS[old][0] : old, STATUS[v][0]);
     else if (f.startsWith('packet.')) logAct('LT', 'edited listing packet for', code, it.title, `Updated ${f.split('.')[1]}`);
     else if (f.startsWith('sale.')) { logAct('SL', 'edited sale details of', code, it.title, `${f.split('.')[1]}: ${old ?? '—'} → ${v}`); syncSaleTx(code); }
@@ -1471,7 +1486,7 @@ async function uploadPhotos(code, files) {
       catch (e) { if (e && e.code === 'store_unavailable') { await sleep(800); r = await S.assets.upload(blob, { type: blob.type || f.type }); } else throw e; }
       const latest = ((S.items[code] && S.items[code].packet && S.items[code].packet.photos) || []);
       await write(() => ref('items/' + code).update({ packet: { photos: [...latest.filter(x => x !== r.id), r.id] }, updatedAt: nowISO() }), 'photo');
-      added++;
+      added++; if (added === 1) autoStatus(code, 'proc', 'started working on');
     } catch (e) {
       sysLog('error', 'app', 'photo upload ' + code, (e && e.message) || (e && e.code) || 'Upload failed', errDetail(e));
       const m = { too_large: 'is too large', unsupported_type: 'is not a supported image', quota_or_state: 'could not be stored — photo storage is full', rate_limited: 'was rate-limited — try again shortly' }[e && e.code];
@@ -1681,7 +1696,7 @@ const ACT = {
     const it = S.items[el.dataset.code]; if (!ShopifyAdapter.configured()) return go('#/settings');
     if (!String((it.packet || {}).description || it.defect || '').trim()) return toast('Write the lister notes first.', 'err');
     S.ui.genBusy = it.code; render(); let g;
-    try { g = await ShopifyAdapter.generate(it.code); logAct('LT', 'generated the Shopify listing for', it.code, it.title, g.title); }
+    try { g = await ShopifyAdapter.generate(it.code); logAct('LT', 'generated the Shopify listing for', it.code, it.title, g.title); autoStatus(it.code, 'proc', 'started working on'); }
     catch (e) { S.ui.genBusy = ''; render(); return toast((e && e.message) || 'Could not write the listing.', 'err'); }
     S.ui.genBusy = ''; render();
     const fresh = S.items[it.code]; const missing = g.missing && g.missing.length ? ` ${g.missing.length} detail${g.missing.length === 1 ? '' : 's'} to add to your notes.` : '';
@@ -1729,7 +1744,7 @@ const ACT = {
       await write(() => ref('items/' + it.code).update({ packet: { units: next }, updatedAt: nowISO() }), it.code);
       for (const c of added) await write(() => ref('items/' + c).update({ listedIn: it.code, updatedAt: nowISO() }), c);
       for (const c of removed) await write(() => ref('items/' + c).update({ listedIn: '', updatedAt: nowISO() }), c);
-      logAct('LT', `set listing quantity to ${next.length} for`, it.code, it.title, '', next);
+      logAct('LT', `set listing quantity to ${next.length} for`, it.code, it.title, '', next); autoStatus(it.code, 'proc', 'started working on');
     } catch (e) {}
   },
   // intake
@@ -1832,7 +1847,7 @@ const ACT = {
     if (!ShopifyAdapter.configured()) return toast('Switch Shopify to Create Shopify drafts first.', 'err');
     if (!isAccountOwner()) return toast('Only an owner account can connect Shopify orders.', 'err');
     el.disabled = true;
-    try { const r = await ShopifyAdapter.connectOrders(); await saveSetting({ shopify: { ...S.settings.shopify, ordersConnected: true } }); logAct('SYS', 'connected Shopify orders', 'SHOPIFY', '', r.uri || ''); toast(r.already ? 'Shopify orders were already connected.' : 'Shopify orders connected. Paid orders will now mark units Sold.'); }
+    try { const r = await ShopifyAdapter.connectOrders(); await saveSetting({ shopify: { ...S.settings.shopify, ordersConnected: true, productsConnected: !!r.products } }); logAct('SYS', 'connected Shopify sync', 'SHOPIFY', '', (r.topics || []).join(', ')); toast(r.already ? 'Shopify sync was already connected.' : 'Shopify sync connected: paid orders mark units Sold, and product deletions or status changes in Shopify update the Vault.'); }
     catch (e) { el.disabled = false; toast((e && e.message) || 'Could not connect Shopify orders.', 'err'); }
   },
   pcEnable: async el => { await saveSetting({ photoCleanup: { ...(S.settings.photoCleanup || {}), enabled: el.dataset.v === 'on' } }); },
@@ -1893,6 +1908,7 @@ async function pushListing(it, o = {}) {
     await write(() => ref('items/' + it.code).update({ packet: { shopifyId: String(res.id || ''), shopifyUrl: String(res.adminUrl || ''), shopifyStatus: String(res.status || 'DRAFT'), shopifyQty: num(res.quantity) || 1, shopifyPushedHash: String(res.generatedHash || ''), shopifyPushedAt: nowISO() } }));
     if (productTab && res.adminUrl) productTab.location = res.adminUrl; else if (productTab) productTab.close();
     const created = !(it.packet || {}).shopifyId;
+    autoStatus(it.code, 'prep', 'prepared for listing');
     logAct('LT', created ? 'created a Shopify draft for' : 'updated the Shopify draft for', lt, it.title, S.settings.shopify.store || '', [it.code]);
     const pics = created ? '' : ` ${res.photosAdded ? `${res.photosAdded} new photo${res.photosAdded === 1 ? '' : 's'} added` : 'No new photos'}${res.duplicatesRemoved ? `, ${res.duplicatesRemoved} duplicate${res.duplicatesRemoved === 1 ? '' : 's'} removed` : ''}.`;
     toast((o.auto ? `Listing written and ${created ? 'added to a new Shopify draft' : 'updated on Shopify'}.${o.note || ''}` : 'Shopify draft saved.') + pics + (o.auto ? ' Next: Activate.' : ''));

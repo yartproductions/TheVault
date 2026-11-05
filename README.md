@@ -87,6 +87,15 @@ npx firebase-tools functions:secrets:set ANTHROPIC_API_KEY   # paste the Anthrop
 ```
 A listing costs a few cents and is regenerated only when the notes or details change.
 
+### Product sync (Shopify → Vault)
+Settings → Shopify → **Connect Shopify sync** subscribes paid orders plus product updates and deletions, all to the existing `shopifyOrderWebhook` endpoint (no new public function).
+- **Deleted in Shopify:** the packet forgets the product (the steps go back to *Create Shopify draft*), Listed units return to Prepared, and the listing keeps its units so re-creating brings back the same quantity.
+- **Status changed in Shopify:** Active moves Prepared units to Listed; Draft or Archived moves Listed units back to Prepared.
+- **Safety net:** if a notice is missed, Update, Activate and the stock sync notice the product is gone and handle it the same way (Update creates a new product).
+
+### Automatic item status
+New → Processing as soon as someone edits the item, adds photos, sets the quantity or writes the listing; → Prepared when the Shopify draft is ready; → Listed on Activate. It only moves forward and never changes Listed, Sold or Archived items.
+
 ### Sales sync
 - **Vault → Shopify:** recording a sale or a return in the Vault resets Shopify's quantity to the units still in stock. At zero the product goes back to Draft so it leaves the store.
 - **Shopify → Vault:** press **Settings → Shopify → Connect Shopify orders** once. Every paid Shopify order then marks the sold units **Sold**, books each sale (price after discounts, Shopify fee 2.9% + $0.30, your flat shipping) with its bookkeeping entry, and logs it in Activity. Each order is recorded exactly once, even if Shopify sends it twice. Lines without a Vault SKU, or with more quantity than is in stock, show up in Settings → System log.

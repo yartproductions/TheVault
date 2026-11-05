@@ -463,6 +463,14 @@ async function saveDraftLocked(itemRef, sku, item, packet, title, price, units, 
   }));
 
   let product;
+  // Deleted in Shopify but the notice never arrived: forget the old product and create a new one.
+  if (packet.shopifyId) {
+    const check = await shopifyGraphql(connection, `query Exists($id: ID!) { product(id: $id) { id } }`, { id: packet.shopifyId });
+    if (!check.product) {
+      await applyShopifyStatus(sku, 'DELETED', 'not found in Shopify when updating');
+      packet = { ...packet }; products.SHOPIFY_FIELDS.forEach(f => delete packet[f]);
+    }
+  }
   if (packet.shopifyId) {
     productInput.id = packet.shopifyId;
     // Only photos the product doesn't have yet. Checked against Shopify itself (not just our own
@@ -547,6 +555,11 @@ exports.shopifyActivate = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SH
   if (!inStock.length) throw new HttpsError('failed-precondition', 'Every unit in this listing is sold or archived.');
 
   const connection = await shopifyToken();
+  const check = await shopifyGraphql(connection, `query Exists($id: ID!) { product(id: $id) { id } }`, { id: packet.shopifyId });
+  if (!check.product) {
+    await applyShopifyStatus(sku, 'DELETED', 'not found in Shopify when activating');
+    throw new HttpsError('failed-precondition', 'This product was deleted in Shopify. Press Create Shopify draft to make it again.');
+  }
   if (packet.shopifyInventoryItemId) await setAvailable(connection, packet.shopifyInventoryItemId, inStock.length);
   const data = await shopifyGraphql(connection,
     `mutation ActivateProduct($product: ProductUpdateInput!) { productUpdate(product: $product) { product { id status } userErrors { field message } } }`,
@@ -579,6 +592,8 @@ async function syncListingStock(connection, sku) {
   const item = snap.data();
   const packet = item.packet || {};
   if (!packet.shopifyId) return null;
+  const check = await shopifyGraphql(connection, `query Exists($id: ID!) { product(id: $id) { id } }`, { id: packet.shopifyId });
+  if (!check.product) { await applyShopifyStatus(sku, 'DELETED', 'not found in Shopify when syncing stock'); return { sku, deleted: true }; }
   const { inStock } = await resolveUnits(sku, packet, item);
   const quantity = inStock.length;
   let inventoryItemId = packet.shopifyInventoryItemId;
@@ -641,6 +656,55 @@ async function appendActivity(entry) {
 }
 
 // Shopify → Vault: a paid order marks the sold units Sold and books each sale, exactly once.
+// ── Product sync: Shopify → Vault ────────────────────────────────
+const products = require('./products');
+// Applies a Shopify product status to the Vault listing that owns it. 'DELETED' unlinks the
+// product so the packet goes back to "Create Shopify draft"; the listing keeps its units.
+async function applyShopifyStatus(sku, status, source) {
+  const itemRef = db.doc(`items/${sku}`);
+  const snap = await itemRef.get();
+  if (!snap.exists) return null;
+  const main = snap.data();
+  const packet = main.packet || {};
+  const units = [{ code: sku, ...main }];
+  for (const code of listingUnits(sku, packet.units).filter(c => c !== sku)) {
+    const u = await db.doc(`items/${code}`).get();
+    if (u.exists) units.push({ code, ...u.data() });
+  }
+  const changes = products.unitChanges(status, units, sku);
+  const now = new Date().toISOString();
+  const batch = db.batch();
+  if (status === 'DELETED') {
+    const cleared = Object.fromEntries(products.SHOPIFY_FIELDS.map(f => [`packet.${f}`, FieldValue.delete()]));
+    batch.update(itemRef, { ...cleared, 'packet.shopifyDeletedAt': now, updatedAt: now });
+  } else if (packet.shopifyStatus !== status) {
+    batch.set(itemRef, { packet: { shopifyStatus: status } }, { merge: true });
+  }
+  changes.forEach(c => { const { code, ...fields } = c; batch.set(db.doc(`items/${code}`), { ...fields, updatedAt: now }, { merge: true }); });
+  await batch.commit();
+  const moved = changes.filter(c => c.status);
+  if (status === 'DELETED' || moved.length) {
+    await appendActivity({ type: 'LT', verb: status === 'DELETED' ? 'saw the Shopify product deleted for' : `saw Shopify set ${status.toLowerCase()} for`, code: sku, obj: main.title || '',
+      detail: `${source}${moved.length ? ` · ${moved.length} unit${moved.length === 1 ? '' : 's'} → ${moved[0].status === 'list' ? 'Listed' : 'Prepared'}` : ''}`, links: moved.map(c => c.code),
+      from: moved.length ? (moved[0].status === 'list' ? 'Prepared' : 'Listed') : '', to: moved.length ? (moved[0].status === 'list' ? 'Listed' : 'Prepared') : '' });
+  }
+  return { sku, status, moved: moved.map(c => c.code) };
+}
+async function skusForProduct(gid) {
+  if (!gid) return [];
+  const snap = await db.collection('items').where('packet.shopifyId', '==', gid).limit(5).get();
+  return snap.docs.map(d => d.id);
+}
+async function handleProductWebhook(topic, body) {
+  const gid = products.productGid(body);
+  const skus = await skusForProduct(gid);
+  if (!skus.length) return 'No Vault listing for this product';
+  const status = topic === 'products/delete' ? 'DELETED' : products.restStatus(body.status);
+  if (!['ACTIVE', 'DRAFT', 'ARCHIVED', 'DELETED'].includes(status)) return 'Status ignored';
+  for (const sku of skus) await applyShopifyStatus(sku, status, topic === 'products/delete' ? 'deleted in Shopify' : `status changed in Shopify`);
+  return `Synced ${skus.join(', ')}`;
+}
+
 exports.shopifyOrderWebhook = onRequest({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET], invoker: 'public', timeoutSeconds: 30 }, async (req, res) => {
   if (req.method !== 'POST') return res.status(405).send('POST only');
   if (!orders.validShopifyHmac(req.rawBody, req.get('X-Shopify-Hmac-Sha256'), SHOPIFY_CLIENT_SECRET.value())) {
@@ -648,6 +712,10 @@ exports.shopifyOrderWebhook = onRequest({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT
     return res.status(401).send('Bad signature');
   }
   const topic = req.get('X-Shopify-Topic') || '';
+  if (topic === 'products/delete' || topic === 'products/update') {
+    try { return res.status(200).send(await handleProductWebhook(topic, req.body || {})); }
+    catch (error) { await writeSyslog('error', 'shopifyProductWebhook', `Could not sync ${topic}: ${error.message}`, products.productGid(req.body)); return res.status(500).send('Retry'); }
+  }
   const order = req.body || {};
   if (topic !== 'orders/paid' || !order.id) return res.status(200).send('Ignored');
   if (order.test) return res.status(200).send('Test order ignored');
@@ -737,14 +805,18 @@ exports.shopifyConnectOrders = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_I
   const project = process.env.GCLOUD_PROJECT || JSON.parse(process.env.FIREBASE_CONFIG || '{}').projectId;
   const uri = `https://us-east1-${project}.cloudfunctions.net/shopifyOrderWebhook`;
   const connection = await shopifyToken();
+  // Paid orders book sales; product updates and deletions keep the packet's Shopify state in step.
+  const topics = ['ORDERS_PAID', 'PRODUCTS_UPDATE', 'PRODUCTS_DELETE'];
   const existing = await shopifyGraphql(connection,
-    `query Hooks { webhookSubscriptions(first: 50, topics: [ORDERS_PAID]) { nodes { id uri } } }`);
-  if (existing.webhookSubscriptions.nodes.some(n => n.uri === uri)) return { connected: true, uri, already: true };
-  const data = await shopifyGraphql(connection,
-    `mutation Subscribe($topic: WebhookSubscriptionTopic!, $sub: WebhookSubscriptionInput!) { webhookSubscriptionCreate(topic: $topic, webhookSubscription: $sub) { webhookSubscription { id uri } userErrors { field message } } }`,
-    { topic: 'ORDERS_PAID', sub: { uri, format: 'JSON' } });
-  checkUserErrors(data.webhookSubscriptionCreate);
-  return { connected: true, uri };
+    `query Hooks { webhookSubscriptions(first: 100) { nodes { id topic uri } } }`);
+  const have = new Set(existing.webhookSubscriptions.nodes.filter(n => n.uri === uri).map(n => n.topic));
+  for (const topic of topics.filter(t => !have.has(t))) {
+    const data = await shopifyGraphql(connection,
+      `mutation Subscribe($topic: WebhookSubscriptionTopic!, $sub: WebhookSubscriptionInput!) { webhookSubscriptionCreate(topic: $topic, webhookSubscription: $sub) { webhookSubscription { id uri } userErrors { field message } } }`,
+      { topic, sub: { uri, format: 'JSON' } });
+    checkUserErrors(data.webhookSubscriptionCreate);
+  }
+  return { connected: true, uri, topics, products: true, already: topics.every(t => have.has(t)) };
 }));
 
 // ── eBay market collector ────────────────────────────────────────
