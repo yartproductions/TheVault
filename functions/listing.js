@@ -73,7 +73,10 @@ RESEARCH RULES
 const TYPES = ['Phone', 'Tablet', 'Watch', 'Laptop', 'Desktop', 'Console', 'GPU', 'CPU', 'Motherboard', 'PSU', 'Storage', 'RAM', 'Camera', 'Audio Equipment', 'Gaming Accessories', 'Computer Peripherals', 'Power Tools', 'Test Equipment', 'Server Components', 'Other'];
 const METAFIELD_KEYS = ['type', 'brand', 'model', 'model_number', 'features', 'screen_size', 'color', 'connectivity', 'processor', 'storage_capacity', 'storage_type', 'operating_system', 'ram', 'gpu', 'mpn', 'network', 'platform', 'release_year', 'game_name', 'upc', 'battery_health', 'imei_status', 'serial_number', 'ebay_condition', 'video_game_platform', 'controller', 'hdmi_cable', 'power_cable', 'watch_size', 'case_material', 'band'];
 const GRADES = ['New', 'Used – Good', 'Used – Fair', 'For Parts'];
-const RETURN_POLICIES = ['30 Days Free Return', 'Returns accepted', 'No returns', 'For parts / no returns'];
+// Buyer pays shipping both ways. The old "30 Days Free Return" is read as the new 30-day option.
+const RETURN_POLICIES = ['30 Days Returns · Buyer Pays Return Shipping', 'Returns accepted · Buyer Pays Return Shipping', 'No returns', 'For parts / no returns'];
+const LEGACY_RETURN = { '30 Days Free Return': RETURN_POLICIES[0], 'Returns accepted': RETURN_POLICIES[1] };
+const SHIPPING_TEXT = 'Paid by buyer · calculated at checkout';
 const STANDARD_WEAR = 'Item is used and may show light scratches, scuffs or dust consistent with normal use, beyond any defects noted above.';
 
 // Confirmed eBay leaf categories from the SYG list; anything else stays blank (never guessed).
@@ -108,7 +111,7 @@ function listingInputs(item, packet) {
     defects: String(item.defect || ''),
     lister_notes: String(pk.description || ''),
     included: String(pk.included || ''),
-    return_policy: RETURN_POLICIES.includes(pk.returnPolicy) ? pk.returnPolicy : RETURN_POLICIES[0]
+    return_policy: RETURN_POLICIES.includes(pk.returnPolicy) ? pk.returnPolicy : (LEGACY_RETURN[pk.returnPolicy] || RETURN_POLICIES[0])
   };
 }
 
@@ -203,7 +206,8 @@ function ebayReadiness(type, grade, conditionText, returnPolicy) {
     ebay_condition_code: code,
     ebay_condition_description: code === '1000' ? '' : conditionText.slice(0, 1000),
     ebay_returns_accepted: noReturns ? 'No' : 'Yes',
-    ebay_returns_within: noReturns ? '' : '30 Days'
+    ebay_returns_within: noReturns ? '' : '30 Days',
+    ebay_return_shipping_paid_by: noReturns ? '' : 'Buyer'
   };
 }
 
@@ -240,7 +244,7 @@ function renderHtml(listing, opts = {}) {
   const gradeClass = { 'New': 'gf-report-new', 'Used – Good': 'gf-report-good', 'Used – Fair': 'gf-report-fair', 'For Parts': 'gf-report-parts' }[listing.grade] || 'gf-report-good';
   return `<div class="${gradeClass}" style="font-family:Arial,sans-serif;max-width:800px;"><table style="width:100%;border-collapse:collapse;font-size:14px;color:#333333;"><tbody>`
     + header('Product Details') + rows.map(row).join('')
-    + header('Shipping & Returns') + row({ label: 'Shipping', value: 'Free Shipping' }, 0) + row({ label: 'Return Policy', value: listing.returnPolicy }, 1)
+    + header('Shipping & Returns') + row({ label: 'Shipping', value: SHIPPING_TEXT }, 0) + row({ label: 'Return Policy', value: listing.returnPolicy }, 1)
     + `</tbody></table></div>`;
 }
 
@@ -255,4 +259,4 @@ function estimateCost(usage, searches, ttl) {
   return +usd.toFixed(4);
 }
 
-module.exports = { RULEBOOK, TYPES, METAFIELD_KEYS, GRADES, RETURN_POLICIES, STANDARD_WEAR, listingInputs, inputsHash, buildPrompt, extractJson, fixTitle, normalizeListing, ebayReadiness, renderHtml, splitIncluded, estimateCost, PRICES };
+module.exports = { RULEBOOK, TYPES, METAFIELD_KEYS, GRADES, RETURN_POLICIES, SHIPPING_TEXT, STANDARD_WEAR, listingInputs, inputsHash, buildPrompt, extractJson, fixTitle, normalizeListing, ebayReadiness, renderHtml, splitIncluded, estimateCost, PRICES };

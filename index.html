@@ -246,7 +246,7 @@ const CODES = {
 };
 const codeType = c => { const p = String(c || '').split('-')[0]; return CODES[p] ? p : 'SYS'; };
 const codeChip = (c, act = true) => { const t = CODES[codeType(c)]; return `<button type="button" class="code" style="color:${t[1]};background:${t[2]}" ${act ? `data-act="goto" data-code="${esc(c)}"` : 'tabindex="-1"'} title="${esc(t[0])}">${esc(c)}</button>`; };
-const DEFAULT_SETTINGS = { owners: { o1: 'Owner 1', o2: 'Owner 2' }, bins: ['A-01', 'A-02', 'B-01', 'B-02', 'CAGE-1', 'BACK'], feePct: 13.25, shipFlat: 15, riskPct: 3, autoLock: 15, shopify: { mode: 'export', store: '' } };
+const DEFAULT_SETTINGS = { owners: { o1: 'Owner 1', o2: 'Owner 2' }, bins: ['A-01', 'A-02', 'B-01', 'B-02', 'CAGE-1', 'BACK'], feePct: 13.25, shipFlat: 15, buyerPaysShipping: true, riskPct: 3, autoLock: 15, shopify: { mode: 'export', store: '' } };
 const OWNER_COLORS = { o1: ['#3DDC97', '#06120D'], o2: ['#8EC3FF', '#071422'] };
 
 // ── state ─────────────────────────────────────────────────────────
@@ -693,9 +693,12 @@ function shell() {
 const head = (sub, title, acts = '', eyebrow = '') => `<header class="head"><div>${eyebrow ? `<div class="eyebrow">${eyebrow}</div>` : `<div class="sm mut2" style="font-size:13px">${sub}</div>`}<h1>${title}</h1>${eyebrow && sub ? `<div class="mut2" style="font-size:14px;margin-top:6px">${sub}</div>` : ''}</div><div class="acts">${acts}</div></header>`;
 
 // ── economics ─────────────────────────────────────────────────────
+// Buyer pays shipping (default): the shipping charge covers the label, so only the marketplace fee
+// (charged on item + shipping) comes off. If the seller pays, the shipping estimate is a cost.
+const buyerShips = () => S.settings.buyerPaysShipping !== false;
 function econ(it) {
   const resale = num(it.resale), cost = num(it.cost); const st = S.settings;
-  const fees = resale > 0 ? resale * (+st.feePct || 0) / 100 + (+st.shipFlat || 0) : 0;
+  const fees = resale > 0 ? (buyerShips() ? (resale + (+st.shipFlat || 0)) * (+st.feePct || 0) / 100 : resale * (+st.feePct || 0) / 100 + (+st.shipFlat || 0)) : 0;
   const risk = resale * (+st.riskPct || 0) / 100;
   if (it.status === 'sold' && it.sale) { const net = num(it.sale.price) - num(it.sale.fees) - num(it.sale.ship) - cost; return { resale, cost, fees: num(it.sale.fees) + num(it.sale.ship), risk: 0, margin: net, realized: true }; }
   return { resale, cost, fees, risk, margin: resale - fees - risk - cost, realized: false };
@@ -810,7 +813,7 @@ function pItem() {
   </div><div class="col-side">
     <section class="card pad" style="display:flex;flex-direction:column"><h2 style="margin-bottom:10px">${e.realized ? 'Realized economics' : 'Projected economics'}</h2>
       <div class="grid g2" style="gap:12px;margin-bottom:8px">${fIn(it, 'resale', 'Expected resale', { money: 1, icon: 'trend', req: 1 })}${fIn(it, 'cost', 'Purchase cost', { money: 1, icon: 'wallet', req: 1 })}</div>
-      <div class="row"><span class="mut">${e.realized ? 'Fees + shipping (actual)' : `Fees + shipping (${S.settings.feePct}% + $${S.settings.shipFlat})`}</span><span class="mono cor">${money(-e.fees)}</span></div>
+      <div class="row"><span class="mut">${e.realized ? 'Fees + shipping (actual)' : buyerShips() ? `Marketplace fees (${S.settings.feePct}%, buyer pays shipping)` : `Fees + shipping (${S.settings.feePct}% + $${S.settings.shipFlat})`}</span><span class="mono cor">${money(-e.fees)}</span></div>
       ${e.realized ? '' : `<div class="row"><span class="mut">Risk allowance (${S.settings.riskPct}%)</span><span class="mono cor">${money(-e.risk)}</span></div>`}
       <div class="row"><span class="mut">Purchase cost</span><span class="mono cor">${money(-e.cost)}</span></div>
       <div class="glow" style="margin-top:14px;padding:16px;display:flex;justify-content:space-between;align-items:baseline"><span style="color:#9EE7BC">${e.realized ? 'Net profit' : 'Est. margin'}</span><span class="mono" style="font-size:26px;color:${e.margin >= 0 ? '#5FE6AC' : '#F2A08A'}">${money(e.margin)}</span></div>
@@ -830,13 +833,15 @@ const NOTES_PLACEHOLDER = {
   'Computer Parts': 'e.g. Kingston 8GB 1Rx8 PC4-2400T ECC RDIMM, qty 2, both pass. Or: Samsung PM883 960GB SATA SSD, 97% health, SN S41...',
   default: 'What it is, model/part number, what you tested and how, every defect, and what\'s included.'
 };
-const RETURN_POLICIES = ['30 Days Free Return', 'Returns accepted', 'No returns', 'For parts / no returns'];
+const RETURN_POLICIES = ['30 Days Returns · Buyer Pays Return Shipping', 'Returns accepted · Buyer Pays Return Shipping', 'No returns', 'For parts / no returns'];
+const LEGACY_RETURN = { '30 Days Free Return': RETURN_POLICIES[0], 'Returns accepted': RETURN_POLICIES[1] };
+const returnPolicyOf = pk => RETURN_POLICIES.includes(pk.returnPolicy) ? pk.returnPolicy : (LEGACY_RETURN[pk.returnPolicy] || RETURN_POLICIES[0]);
 // True when the inputs changed since the listing was generated, so it would be regenerated on push.
 function generatedStale(it, pk) {
   const g = pk.generated; if (!g || !g.inputs) return true; const i = g.inputs;
   return i.vault_title !== String(it.title || '') || i.working_title !== String(pk.title || '') || i.category !== String(it.category || '') || i.vault_condition !== String(it.condition || '')
     || i.specs !== String(it.specs || '') || i.serial !== String(it.serial || '') || i.defects !== String(it.defect || '') || i.lister_notes !== String(pk.description || '')
-    || i.included !== String(pk.included || '') || i.return_policy !== (RETURN_POLICIES.includes(pk.returnPolicy) ? pk.returnPolicy : RETURN_POLICIES[0]);
+    || i.included !== String(pk.included || '') || i.return_policy !== returnPolicyOf(pk);
 }
 function generatedPanel(it, pk) {
   if (!ShopifyAdapter.configured()) return '';
@@ -1060,6 +1065,9 @@ function speedOf(doc) {
   return { label: 'Learning', color: '#C9D4CF', bg: '#1F2725', weeks: null, note: 'needs a few snapshots' };
 }
 // Profit per unit if your stock sells at a price, after your usual fees and shipping.
+// eBay asking prices include shipping. When the buyer pays shipping, list the item for that total
+// minus the usual shipping charge (one parcel per lot).
+function listPrice(landed, n = 1) { const total = landed * n; return charm(buyerShips() ? Math.max(1, total - (+S.settings.shipFlat || 0)) : total); }
 function profitAt(price, key) {
   // Per record: lot price = unit price × units in the lot. Records without a cost are left out.
   const stock = itemsArr().filter(i => marketKeyOf(i) === key && STOCK.includes(i.status) && num(i.cost) > 0);
@@ -1160,7 +1168,7 @@ function pMarket() {
     const stock = itemsArr().filter(i => marketKeyOf(i) === d.key && STOCK.includes(i.status)); if (!stock.length) continue;
     const sp = suggestPrices(d); if (!sp) { tot.unpriced += stock.length; continue; }
     const units = stock.reduce((n, i) => n + lotOf(i), 0);
-    tot.fast += sp.fast * units; tot.max += sp.max * units; tot.cost += stock.reduce((n, i) => n + num(i.cost), 0); tot.units += units; tot.noCost += stock.filter(i => !(num(i.cost) > 0)).length;
+    tot.fast += stock.reduce((n, i) => n + listPrice(sp.fast, lotOf(i)), 0); tot.max += stock.reduce((n, i) => n + listPrice(sp.max, lotOf(i)), 0); tot.cost += stock.reduce((n, i) => n + num(i.cost), 0); tot.units += units; tot.noCost += stock.filter(i => !(num(i.cost) > 0)).length;
     const c = confidenceOf(d); if (c) { wSum += sp.fast * units; wScore += c.score * sp.fast * units; }
   }
   if (wSum) { const score = Math.round(wScore / wSum); const [, level, color] = CONFIDENCE_LEVELS.find(([min]) => score >= min); tot.conf = { score, level, color }; }
@@ -1194,7 +1202,7 @@ function pMarket() {
       ${d.error ? `<div class="notice bad"><div><b>Couldn't check eBay:</b> ${esc(d.error)}</div></div>` : ''}
       ${matchPanel(d, M)}
       ${sp ? `<div class="glow" style="padding:14px 16px;display:flex;gap:16px;flex-wrap:wrap;align-items:center;justify-content:space-between">
-        <div><div class="sm" style="color:#9EE7BC">Suggested asking price ${lots.length ? 'per unit' : ''} (shipping included)</div><div style="display:flex;gap:18px;align-items:baseline;margin-top:4px;flex-wrap:wrap"><span><span class="mono" style="font-size:26px;color:#5FE6AC">${money(sp.fast)}</span> <span class="sm mut">to sell fast</span></span><span><span class="mono" style="font-size:18px;color:#8EC3FF">${money(sp.max)}</span> <span class="sm mut">for max profit</span></span></div>${lots.length ? `<div class="sm" style="margin-top:6px;color:#C9D4CF">${lots.map(n => `Lot of ${n}: <span class="mono" style="color:#5FE6AC">${money(charm(sp.fast * n))}</span> fast · <span class="mono" style="color:#8EC3FF">${money(charm(sp.max * n))}</span> max`).join(' &nbsp;·&nbsp; ')}</div>` : ''}</div>
+        <div><div class="sm" style="color:#9EE7BC">${buyerShips() ? `List at ${lots.length ? '(single unit)' : ''} · buyer pays ≈${money0(S.settings.shipFlat)} shipping on top` : `Suggested asking price ${lots.length ? 'per unit' : ''} (shipping included)`}</div><div style="display:flex;gap:18px;align-items:baseline;margin-top:4px;flex-wrap:wrap"><span><span class="mono" style="font-size:26px;color:#5FE6AC">${money(listPrice(sp.fast))}</span> <span class="sm mut">to sell fast</span></span><span><span class="mono" style="font-size:18px;color:#8EC3FF">${money(listPrice(sp.max))}</span> <span class="sm mut">for max profit</span></span></div>${buyerShips() ? `<div class="sm mut2" style="margin-top:4px">Buyer's total ≈ ${money(sp.fast)} / ${money(sp.max)}, in line with eBay's asking prices</div>` : ''}${lots.length ? `<div class="sm" style="margin-top:6px;color:#C9D4CF">${lots.map(n => `Lot of ${n}: <span class="mono" style="color:#5FE6AC">${money(listPrice(sp.fast, n))}</span> fast · <span class="mono" style="color:#8EC3FF">${money(listPrice(sp.max, n))}</span> max`).join(' &nbsp;·&nbsp; ')}</div>` : ''}</div>
         <div style="display:flex;flex-direction:column;gap:4px"><span class="sm mut2">Confidence in this price</span>${confidenceMeter(conf, true)}</div>
         ${pf != null ? `<div style="text-align:right"><div class="sm mut2">Your profit ${lots.length ? 'per lot' : 'per unit'} at the fast price</div><div class="mono" style="font-size:20px;color:${pf >= 0 ? '#5FE6AC' : '#F2A08A'}">${money(pf, 1)}</div><div class="sm mut2">after ${S.settings.feePct}% fees + $${S.settings.shipFlat} shipping</div></div>` : missingCost ? `<div style="text-align:right;max-width:220px"><div class="sm" style="color:#F2C063">Profit unknown</div><div class="sm mut2">${missingCost === myStock.length ? 'This stock has' : `${missingCost} record${missingCost === 1 ? '' : 's'} have`} no purchase cost. Add it on the item page.</div></div>` : ''}</div>` : ''}
       ${priceBar(d, d.key)}
@@ -1235,12 +1243,12 @@ function marketBox(it) {
       ${priceBar(d, key, true)}
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="sm mut">Price confidence</span>${confidenceMeter(confidenceOf(d))}</div>
       <div class="row"><span class="mut">Listed on eBay now ${srcTag('ebay')}</span><span class="mono">${l.total ?? '—'}</span></div><div class="row"><span class="mut">Sold per week ${srcTag('est')}</span><span class="mono">${d.perWeek != null ? '~' + d.perWeek : '—'}</span></div>${v.avgDays != null ? `<div class="row"><span class="mut">Your avg days to sell ${srcTag('vault')}</span><span class="mono">${Math.round(v.avgDays)}</span></div>` : ''}
-      ${sp ? (() => { const n = lotOf(it); const f = n > 1 ? charm(sp.fast * n) : sp.fast; const x = n > 1 ? charm(sp.max * n) : sp.max; return `${n > 1 ? `<div class="sm mut2">Lot of ${n} · ${money(sp.fast)} per unit</div>` : ''}<div class="acts"><button class="btn sm pri" data-act="mkUsePrice" data-code="${esc(it.code)}" data-v="${f}">Use ${money(f)} · fast</button><button class="btn sm" data-act="mkUsePrice" data-code="${esc(it.code)}" data-v="${x}">Use ${money(x)} · max</button></div>`; })() : ''}<div class="sm mut2">eBay checked ${agoText(l.t)} · asking prices, not sold prices</div>`
+      ${sp ? (() => { const n = lotOf(it); const f = listPrice(sp.fast, n); const x = listPrice(sp.max, n); return `${n > 1 ? `<div class="sm mut2">Lot of ${n} · ${money(sp.fast)} per unit on eBay</div>` : ''}${buyerShips() ? `<div class="sm mut2">Item price · buyer pays ≈${money0(S.settings.shipFlat)} shipping on top</div>` : ''}<div class="acts"><button class="btn sm pri" data-act="mkUsePrice" data-code="${esc(it.code)}" data-v="${f}">Use ${money(f)} · fast</button><button class="btn sm" data-act="mkUsePrice" data-code="${esc(it.code)}" data-v="${x}">Use ${money(x)} · max</button></div>`; })() : ''}<div class="sm mut2">eBay checked ${agoText(l.t)} · asking prices, not sold prices</div>`
       : d && d.error ? `<div class="notice bad"><div>${esc(d.error)}</div></div>` : `<div class="sm mut2">${d ? 'Waiting for the first eBay snapshot.' : 'Not watched on eBay yet.'}</div><button class="btn sm" data-act="mkWatchItem" data-code="${esc(it.code)}" ${S.ui.market && S.ui.market.busy ? 'disabled' : ''}>${ic('trend', 14)}Check eBay now</button>`}</section>`;
 }
 
 // ── RECORD A SALE ─────────────────────────────────────────────────
-function newSale(code) { const it = S.items[code]; const price = it ? num((it.packet && it.packet.price) || it.resale) : 0; const s = { code: it ? code : '', channel: 'eBay', price: price ? price.toFixed(2) : '', fees: '', feesTouched: false, ship: String(S.settings.shipFlat || 0), date: localISO(), order: '', tracking: '', buyer: '', busy: false, err: '' }; autoFees(s); return s; }
+function newSale(code) { const it = S.items[code]; const price = it ? num((it.packet && it.packet.price) || it.resale) : 0; const s = { code: it ? code : '', channel: 'eBay', price: price ? price.toFixed(2) : '', fees: '', feesTouched: false, ship: buyerShips() ? '0' : String(S.settings.shipFlat || 0), date: localISO(), order: '', tracking: '', buyer: '', busy: false, err: '' }; autoFees(s); return s; }
 function autoFees(s) { if (s.feesTouched) return; const p = num(s.price); s.fees = s.channel === 'eBay' ? (p * (+S.settings.feePct || 0) / 100).toFixed(2) : s.channel === 'Shopify' ? (p ? (p * 0.029 + 0.3).toFixed(2) : '0.00') : s.channel === 'Local' ? '0.00' : s.fees; }
 function pSell() {
   const s = S.ui.sale || (S.ui.sale = newSale(S.route.arg)); const it = S.items[s.code];
@@ -1353,7 +1361,9 @@ function pSettings() {
       ${invite ? `<div class="notice info" style="flex-direction:column;align-items:stretch"><b>Account added — send this one-time setup link to ${esc(invite.email)}</b><textarea class="ta mono" id="member-link" rows="3" readonly>${esc(invite.link)}</textarea><div><button class="btn sm" data-act="memberCopy">Copy setup link</button></div></div>` : ''}</section>` : ''}
 
     <section class="card pad" style="display:flex;flex-direction:column;gap:16px"><h2>Pricing model</h2>
-      <div class="grid g3 stack">${sf('feePct', 'Marketplace fee %', { num: 1, mono: 1 })}${sf('shipFlat', 'Shipping estimate $', { num: 1, mono: 1 })}${sf('riskPct', 'Risk allowance %', { num: 1, mono: 1 })}</div>
+      <div class="grid g3 stack">${sf('feePct', 'Marketplace fee %', { num: 1, mono: 1 })}${sf('shipFlat', buyerShips() ? 'Typical shipping charge $' : 'Shipping estimate $', { num: 1, mono: 1 })}${sf('riskPct', 'Risk allowance %', { num: 1, mono: 1 })}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div class="sm mut" style="flex:1;min-width:220px"><b style="color:var(--tx)">Who pays shipping</b> · ${buyerShips() ? 'The buyer pays shipping (and return shipping). Margins don’t subtract it, and Market prices are shown as the item price with shipping on top.' : 'You pay shipping: the estimate above comes off every margin.'}</div>
+        <div class="seg">${[['buyer', 'Buyer'], ['me', 'Me']].map(([k, l]) => `<button class="${buyerShips() === (k === 'buyer') ? 'on' : ''}" data-act="shipPayer" data-v="${k}">${l}</button>`).join('')}</div></div>
       <p class="sm mut2" style="margin:0;line-height:1.5">Used for projected margins on every item and to pre-fill eBay fees when recording a sale.</p></section>
 
     <section class="card pad" style="display:flex;flex-direction:column;gap:16px;grid-column:1/-1"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="display:flex;align-items:center;gap:12px"><span class="cat" style="width:40px;height:40px;background:#0F2A1F;color:#5FE6AC">${ic('shop', 20)}</span><div><h2>Shopify integration</h2><div class="sm mut2" style="margin-top:3px">Create Shopify draft products directly from completed Vault packets.</div></div></div>
@@ -1795,7 +1805,7 @@ const ACT = {
   inDone: () => completeIntake(),
   custIntake: el => { if (!S.ui.intake) S.ui.intake = restoreIntake(); S.ui.intake.customerId = el.dataset.code; S.ui.intake.custMode = 'existing'; go('#/intake'); },
   // sale
-  sChan: el => { const s = S.ui.sale; s.channel = el.dataset.v; s.feesTouched = el.dataset.v === 'Other' ? s.feesTouched : false; s.ship = el.dataset.v === 'Local' ? '0' : (num(s.ship) ? s.ship : String(S.settings.shipFlat || 0)); autoFees(s); render(); },
+  sChan: el => { const s = S.ui.sale; s.channel = el.dataset.v; s.feesTouched = el.dataset.v === 'Other' ? s.feesTouched : false; s.ship = el.dataset.v === 'Local' || buyerShips() ? (num(s.ship) && el.dataset.v !== 'Local' ? s.ship : '0') : (num(s.ship) ? s.ship : String(S.settings.shipFlat || 0)); autoFees(s); render(); },
   sSave: () => completeSale(),
   // customers
   custSel: el => { S.ui.cust.sel = el.dataset.code; render(); },
@@ -1892,6 +1902,7 @@ const ACT = {
     finally { S.ui.pcBusy = ''; render(); }
   },
   shProvider: async el => { await saveSetting({ shopify: { ...S.settings.shopify, listingProvider: el.dataset.v } }); },
+  shipPayer: async el => { await saveSetting({ buyerPaysShipping: el.dataset.v === 'buyer' }); },
   shWear: async el => { await saveSetting({ shopify: { ...S.settings.shopify, standardWear: el.dataset.v === 'on' } }); },
   shMode: async el => { await saveSetting({ shopify: { ...S.settings.shopify, mode: el.dataset.v } }); },
   memberInvite: async () => {

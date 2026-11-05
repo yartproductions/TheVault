@@ -722,7 +722,9 @@ exports.shopifyOrderWebhook = onRequest({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT
 
   try {
     const settingsSnap = await db.doc('meta/settings').get();
-    const shipFlat = Number(settingsSnap.exists && settingsSnap.data().shipFlat) || 0;
+    // Buyer-paid shipping (the default) covers the label, so no flat shipping cost comes off the sale.
+    const settingsData = settingsSnap.exists ? settingsSnap.data() : {};
+    const shipFlat = settingsData.buyerPaysShipping === false ? Number(settingsData.shipFlat) || 0 : 0;
     const date = orders.orderDate(order);
     const buyer = orders.buyerName(order);
     const orderName = String(order.name || order.order_number || order.id);

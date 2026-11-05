@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const L = require('./listing');
 
-const inputs = (over = {}) => L.listingInputs({ code: 'VR-00011', title: 'Lot of 4 | SKhynix 64GB', category: 'Computer Parts', condition: 'Good', specs: 'HMA84GR7AFR4N-VK', serial: '', defect: 'None found', ...over }, { description: 'pulled from a working server, all 4 tested', returnPolicy: '30 Days Free Return' });
+const inputs = (over = {}) => L.listingInputs({ code: 'VR-00011', title: 'Lot of 4 | SKhynix 64GB', category: 'Computer Parts', condition: 'Good', specs: 'HMA84GR7AFR4N-VK', serial: '', defect: 'None found', ...over }, { description: 'pulled from a working server, all 4 tested', returnPolicy: '30 Days Free Return' }); // legacy value, read as the new 30-day option
 
 test('titles follow the rulebook', () => {
   assert.equal(L.fixTitle('Apple MacBook Pro 14" M1 Pro 16GB 512GB Grade B'), 'Apple MacBook Pro 14-inch M1 Pro 16GB 512GB');
@@ -24,6 +24,7 @@ test('output is checked and the code-owned parts are filled', () => {
   assert.equal(out.metafields.ebay_condition, 'Used');
   assert.equal(out.ebay.ebay_category_id, '170083');
   assert.equal(out.ebay.ebay_returns_within, '30 Days');
+  assert.equal(out.ebay.ebay_return_shipping_paid_by, 'Buyer');
 });
 
 test("the lister's For Parts wins and the For Parts sentence is added", () => {
@@ -42,8 +43,9 @@ test('HTML follows the template: navy bars, fixed rows, escaped values, no scrip
   assert.equal((html.match(/#1F4E79/g) || []).length, 2);
   assert.match(html, />Product Details</);
   assert.match(html, />Shipping &amp; Returns</);
-  assert.match(html, /Free Shipping/);
-  assert.match(html, /30 Days Free Return/);
+  assert.match(html, /Paid by buyer · calculated at checkout/);
+  assert.doesNotMatch(html, /Free Shipping|Free Return/i);
+  assert.match(html, /30 Days Returns · Buyer Pays Return Shipping/);
   assert.match(html, /consistent with normal use/);
   assert.doesNotMatch(html, /<script|rgb\(|Item Specifications|height=/i);
   assert.ok(html.indexOf('>Condition<') < html.indexOf('>Included<'));
