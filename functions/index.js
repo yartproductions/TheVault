@@ -422,6 +422,19 @@ exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, S
   const quantity = inStock.length;
   if (!quantity) throw new HttpsError('failed-precondition', 'Every unit in this listing is sold or archived.');
 
+  // One send per item at a time: two overlapping updates would each add the same new photos.
+  await db.runTransaction(async tx => {
+    const snap = await tx.get(itemRef);
+    const since = Date.parse(((snap.data() || {}).packet || {}).shopifySavingAt || '');
+    if (isFinite(since) && Date.now() - since < 120000) throw new HttpsError('aborted', 'This item is already being sent to Shopify. Wait a moment and try again.');
+    tx.set(itemRef, { packet: { shopifySavingAt: new Date().toISOString() } }, { merge: true });
+  });
+  try { return await saveDraftLocked(itemRef, sku, item, packet, title, price, units, quantity); }
+  finally { await itemRef.set({ packet: { shopifySavingAt: FieldValue.delete() } }, { merge: true }).catch(() => {}); }
+}));
+
+async function saveDraftLocked(itemRef, sku, item, packet, title, price, units, quantity) {
+  let mediaCleanup = 0; let photosAdded = 0;
   const connection = await shopifyToken();
   // The lister's notes are plain English, not final copy: the listing is generated from them with
   // the Thoky rulebook (or reused if nothing changed since the last "Generate listing").
@@ -447,15 +460,30 @@ exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, S
   let product;
   if (packet.shopifyId) {
     productInput.id = packet.shopifyId;
-    // Only photos that weren't sent before, so updates don't duplicate media.
-    const sent = new Set(packet.shopifyMediaSent || []);
-    const newMedia = media.filter(m => !sent.has(m.originalSource));
+    // Only photos the product doesn't have yet. Checked against Shopify itself (not just our own
+    // record), and repeat copies of the same Vault photo left by earlier updates are removed.
+    const existing = await shopifyGraphql(connection,
+      `query ProductMedia($id: ID!) { product(id: $id) { media(first: 100) { nodes { id status ... on MediaImage { image { url } preview { image { url } } } } } } }`,
+      { id: packet.shopifyId });
+    const plan = photos.planMedia(media.map(m => m.originalSource), existing.product ? existing.product.media.nodes : [], packet.shopifyMediaSent);
+    const newMedia = media.filter(m => plan.toAdd.includes(m.originalSource));
+    photosAdded = newMedia.length;
+    if (plan.duplicates.length) {
+      try {
+        const removed = await shopifyGraphql(connection,
+          `mutation RemoveDuplicateMedia($files: [FileUpdateInput!]!) { fileUpdate(files: $files) { files { id } userErrors { field message } } }`,
+          { files: plan.duplicates.map(id => ({ id, referencesToRemove: [packet.shopifyId] })) });
+        checkUserErrors(removed.fileUpdate);
+        mediaCleanup = plan.duplicates.length;
+      } catch (error) { console.warn('Duplicate photo cleanup failed:', error.message); }
+    }
     const data = await shopifyGraphql(connection,
       `mutation UpdateProduct($product: ProductUpdateInput!, $media: [CreateMediaInput!]) { productUpdate(product: $product, media: $media) { product { id handle status variants(first: 1) { nodes { id inventoryItem { id } } } } userErrors { field message } } }`,
       { product: productInput, media: newMedia.length ? newMedia : null });
     product = checkUserErrors(data.productUpdate).product;
   } else {
     productInput.status = 'DRAFT';
+    photosAdded = media.length;
     const data = await shopifyGraphql(connection,
       `mutation CreateProduct($product: ProductCreateInput!, $media: [CreateMediaInput!]) { productCreate(product: $product, media: $media) { product { id handle status variants(first: 1) { nodes { id inventoryItem { id } } } } userErrors { field message } } }`,
       { product: productInput, media });
@@ -483,8 +511,8 @@ exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, S
   batch.set(itemRef, { packet: { shopifyId: product.id, shopifyUrl: adminUrl, shopifySku: sku, shopifyStatus: product.status || 'DRAFT', shopifyQty: quantity, shopifyInventoryItemId: variant.inventoryItem.id, units, shopifyMediaSent: media.map(m => m.originalSource), ...publish, shopifySyncedAt: FieldValue.serverTimestamp() } }, { merge: true });
   units.filter(code => code !== sku).forEach(code => batch.set(db.doc(`items/${code}`), { listedIn: sku }, { merge: true }));
   await batch.commit();
-  return { id: product.id, adminUrl, sku, status: product.status || 'DRAFT', quantity, units, generatedHash: gen.inputsHash || '' };
-}));
+  return { id: product.id, adminUrl, sku, status: product.status || 'DRAFT', quantity, units, generatedHash: gen.inputsHash || '', photosAdded, duplicatesRemoved: mediaCleanup };
+}
 
 // Puts a product on the store's sales channels (Online Store and Shop). Products created through
 // the API start unpublished, so an Active product isn't visible to buyers until this runs.

@@ -53,4 +53,33 @@ function orphanFiles(files, referencedPaths, now, orphanDays = 14) {
   return (files || []).filter(f => f.name.startsWith('photos/') && !referencedPaths.has(f.name) && now - Date.parse(f.created) >= orphanDays * 864e5);
 }
 
-module.exports = { storagePath, isFirebasePhoto, isShopifyCdn, planItem, shopifyCopies, orphanFiles };
+// ── Matching Vault photos to the images already on a Shopify product ──
+// Vault uploads are named photos/<ms>-<id>.<ext>; Shopify keeps that file name (adding _<uuid> when
+// the same name is uploaded again), so the name tells us which photos a product already has.
+const baseName = path => String(path || '').split('?')[0].split('/').pop().replace(/\.[a-z0-9]+$/i, '').toLowerCase();
+function photoKey(url) { const p = storagePath(url); return p ? baseName(p) : ''; }
+function shopifyKey(url) { return isShopifyCdn(url) ? baseName(url).replace(/_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i, '').replace(/_[0-9a-f]{6,}$/i, '') : ''; }
+const VAULT_NAME = /^\d{12,}-[a-z0-9]+$/i;
+
+// Which Vault photos still need sending, and which Shopify images are repeat copies of a Vault photo.
+// nodes: product media [{ id, status, image: { url }, preview: { image: { url } } }].
+function planMedia(photoUrls, nodes, sentUrls) {
+  const sent = new Set(sentUrls || []);
+  const groups = new Map();
+  for (const n of nodes || []) {
+    const url = (n.image && n.image.url) || (n.preview && n.preview.image && n.preview.image.url) || '';
+    const key = shopifyKey(url);
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(n);
+  }
+  const toAdd = (photoUrls || []).filter(url => !sent.has(url) && !groups.has(photoKey(url)));
+  const duplicates = [];
+  for (const [key, list] of groups) {
+    if (!VAULT_NAME.test(key) || list.length < 2) continue;
+    list.slice(1).filter(n => n.status === 'READY').forEach(n => duplicates.push(n.id));
+  }
+  return { toAdd, duplicates };
+}
+
+module.exports = { photoKey, shopifyKey, planMedia, storagePath, isFirebasePhoto, isShopifyCdn, planItem, shopifyCopies, orphanFiles };

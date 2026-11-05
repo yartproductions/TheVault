@@ -1894,7 +1894,8 @@ async function pushListing(it, o = {}) {
     if (productTab && res.adminUrl) productTab.location = res.adminUrl; else if (productTab) productTab.close();
     const created = !(it.packet || {}).shopifyId;
     logAct('LT', created ? 'created a Shopify draft for' : 'updated the Shopify draft for', lt, it.title, S.settings.shopify.store || '', [it.code]);
-    toast(o.auto ? `Listing written and ${created ? 'added to a new Shopify draft' : 'updated on Shopify'}.${o.note || ''} Next: Activate.` : 'Shopify draft saved.');
+    const pics = created ? '' : ` ${res.photosAdded ? `${res.photosAdded} new photo${res.photosAdded === 1 ? '' : 's'} added` : 'No new photos'}${res.duplicatesRemoved ? `, ${res.duplicatesRemoved} duplicate${res.duplicatesRemoved === 1 ? '' : 's'} removed` : ''}.`;
+    toast((o.auto ? `Listing written and ${created ? 'added to a new Shopify draft' : 'updated on Shopify'}.${o.note || ''}` : 'Shopify draft saved.') + pics + (o.auto ? ' Next: Activate.' : ''));
   } catch (e) { if (productTab) productTab.close(); toast((o.auto ? 'Listing written, but Shopify couldn’t save it: ' : '') + ((e && e.message) || 'Shopify could not save the draft. Your packet is still safe in the Vault.'), 'err'); }
   finally { S.ui.pushBusy = ''; render(); }
 }

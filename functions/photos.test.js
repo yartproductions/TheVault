@@ -49,3 +49,22 @@ test('orphans are unreferenced files older than the waiting period', () => {
   ];
   assert.deepEqual(P.orphanFiles(files, new Set(['photos/a.jpg']), now).map(f => f.name), ['photos/b.jpg']);
 });
+
+test('updates send only photos Shopify does not have, and spot repeat copies', () => {
+  const cdn = (name, v = '') => ({ id: 'gid://shopify/MediaImage/' + name + v, status: 'READY', image: { url: `https://cdn.shopify.com/s/files/1/0/files/${name}.jpg?v=123` } });
+  const a = fb('1730000000000-aaaa'), b = fb('1730000000001-bbbb'), c = fb('1730000000002-cccc');
+  assert.equal(P.photoKey(a), '1730000000000-aaaa');
+  assert.equal(P.shopifyKey('https://cdn.shopify.com/s/files/1/0/files/1730000000000-aaaa_3f2a9c1e-7b4d-4e2a-9c1f-0a1b2c3d4e5f.jpg?v=9'), '1730000000000-aaaa');
+  // a and b already on Shopify (b twice), c is new; nothing recorded as sent
+  const nodes = [cdn('1730000000000-aaaa'), cdn('1730000000001-bbbb'), cdn('1730000000001-bbbb_3f2a9c1e-7b4d-4e2a-9c1f-0a1b2c3d4e5f', 'x')];
+  const plan = P.planMedia([a, b, c], nodes, []);
+  assert.deepEqual(plan.toAdd, [c]);
+  assert.deepEqual(plan.duplicates, ['gid://shopify/MediaImage/1730000000001-bbbb_3f2a9c1e-7b4d-4e2a-9c1f-0a1b2c3d4e5fx']);
+  // recorded as sent but deleted in Shopify by hand: not sent again
+  assert.deepEqual(P.planMedia([a], [], [a]).toAdd, []);
+  // images that didn't come from the Vault are never treated as duplicates
+  assert.deepEqual(P.planMedia([], [cdn('front'), cdn('front_3f2a9c1e-7b4d-4e2a-9c1f-0a1b2c3d4e5f')], []).duplicates, []);
+  // copies still processing aren't removed yet
+  const proc = { ...cdn('1730000000000-aaaa_3f2a9c1e-7b4d-4e2a-9c1f-0a1b2c3d4e5f'), status: 'PROCESSING' };
+  assert.deepEqual(P.planMedia([a], [cdn('1730000000000-aaaa'), proc], []).duplicates, []);
+});
