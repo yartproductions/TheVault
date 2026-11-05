@@ -840,14 +840,14 @@ function generatedStale(it, pk) {
 function generatedPanel(it, pk) {
   if (!ShopifyAdapter.configured()) return '';
   const g = pk.generated; const busy = S.ui.genBusy === it.code;
-  const btn = `<button class="btn ${g ? '' : 'pri'}" data-act="pkGenerate" data-code="${esc(it.code)}" ${busy ? 'disabled' : ''}>${ic('star', 16)}${busy ? 'Writing the listing…' : g ? 'Regenerate listing' : 'Generate listing'}</button>`;
-  if (!g) return `<div class="card pad-s" style="background:var(--card2);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div class="sm mut" style="flex:1;min-width:220px"><b style="color:var(--tx)">Shopify listing</b> — written from your notes with the SYG rulebook: title format, condition grade, spec table, Shipping & Returns, metafields. Preview it here before anything goes to Shopify (it's also generated automatically on Create Shopify draft).</div>${btn}</div>`;
+  if (!g) return '';
+  const btn = '';
   const stale = generatedStale(it, pk);
   const list = (items, color) => items.map(x => `<li style="color:${color}">${esc(x)}</li>`).join('');
   const gradeColor = g.grade === 'For Parts' ? '#F2A08A' : g.grade === 'Used – Fair' ? '#F2C063' : '#5FE6AC';
   return `<div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:12px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><b>Shopify listing preview</b> <span class="sm mut2">· ${esc(g.type)} · written ${agoText(g.at)}${g.provider ? ` by ${g.provider === 'openai' ? 'OpenAI' : 'Claude'}${g.model ? ` <span class="mono">(${esc(g.model)})</span>` : ''}` : ''}${g.searches ? ` · ${g.searches} web lookup${g.searches === 1 ? '' : 's'}` : ''}${g.cost != null ? ` · ≈ $${(+g.cost).toFixed(3)}${g.costEstimate ? ' est.' : ''}${g.usage && g.usage.cache_read_input_tokens ? ' (rulebook cached)' : ''}` : ''}</span></div>${btn}</div>
-    ${stale ? '<div class="notice"><div>The notes or details changed since this was written. Regenerate to update it (it also updates automatically when you push to Shopify).</div></div>' : ''}
+    ${stale ? '<div class="notice"><div>The notes or details changed since this was written. Press <b>Rewrite listing</b> in step 1 to update it and the Shopify draft.</div></div>' : ''}
     <div><div class="sm mut2">Title · ${g.title.length}/80</div><div style="font-size:16px;font-weight:600;margin-top:2px">${esc(g.title)}</div></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;font-weight:700;padding:4px 9px;border-radius:7px;background:#111615;border:1px solid ${gradeColor};color:${gradeColor}">${esc(g.grade)}</span><span class="sm mut">${esc(g.conditionText)}</span></div>
     <iframe title="Description preview" sandbox="" srcdoc="${esc('<!doctype html><html><body style="margin:0;padding:12px;background:#ffffff">' + g.html + '</body></html>')}" style="width:100%;height:${Math.min(820, 140 + (g.rows.length + 4) * 38)}px;border:1px solid var(--line);border-radius:10px;background:#ffffff"></iframe>
@@ -857,6 +857,26 @@ function generatedPanel(it, pk) {
       ${g.filledFromKnowledge.length ? `<div><b style="color:#8EC3FF">Filled in from research</b><ul style="margin:6px 0 0 18px;padding:0">${list(g.filledFromKnowledge.map(f => `${f.field}: ${f.value}`), '#C9DDF5')}</ul></div>` : ''}</div>` : ''}
     <details><summary class="sm mut2" style="cursor:pointer">Metafields (${Object.keys(g.metafields || {}).length + Object.values(g.ebay || {}).filter(Boolean).length})</summary><div class="mono" style="font-size:12px;margin-top:8px;display:grid;grid-template-columns:auto 1fr;gap:4px 14px">${Object.entries({ ...(g.metafields || {}), ...(g.ebay || {}) }).filter(([, v]) => v).map(([k, v]) => `<span class="mut2">custom.${esc(k)}</span><span>${esc(v)}</span>`).join('')}</div></details>
   </div>`;
+}
+// The three listing steps: write the listing → it fills the Shopify draft → go live.
+function listingSteps(it, pk) {
+  const g = pk.generated; const stale = !g || generatedStale(it, pk);
+  const live = pk.shopifyStatus === 'ACTIVE'; const soldOut = pk.shopifyId && !stockOf(listingUnitsOf(it));
+  const genBusy = S.ui.genBusy === it.code; const pushBusy = S.ui.pushBusy === it.code;
+  const hasNotes = !!String(pk.description || it.defect || '').trim(); const priced = packetOf(it).price > 0;
+  const d1 = !stale; const d2 = d1 && pk.shopifyId && pk.shopifyPushedHash === g.inputsHash; const d3 = live;
+  const cur = !d1 ? 1 : !d2 ? 2 : !d3 ? 3 : 0;
+  const tile = (n, done, title, sub, button) => `<div style="flex:1 1 210px;display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:12px;background:${cur === n ? '#0F2A1F' : 'var(--card2)'};border:1px solid ${cur === n ? '#3DDC97' : 'var(--line)'}">
+      <div style="display:flex;align-items:center;gap:10px"><span style="display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;font-size:13px;font-weight:700;background:${done ? '#3DDC97' : cur === n ? '#163B2C' : '#1A2120'};color:${done ? '#06120D' : cur === n ? '#5FE6AC' : '#7D8B85'}">${done ? '✓' : n}</span><b style="font-size:14px">${title}</b></div>
+      <div class="sm mut2" style="flex-grow:1;line-height:1.45">${sub}</div>${button}</div>`;
+  const b1 = `<button class="btn ${cur === 1 ? 'pri' : ''}" data-act="pkGenerate" data-code="${esc(it.code)}" ${genBusy || pushBusy ? 'disabled' : ''} style="justify-content:center">${ic('star', 16)}${genBusy ? 'Writing the listing…' : g ? 'Rewrite listing' : 'Write listing'}</button>`;
+  const sendLabel = pushBusy ? 'Sending to Shopify…' : !pk.shopifyId ? 'Create Shopify draft' : live ? 'Update Shopify listing' : 'Update Shopify draft';
+  const b2 = `<div class="acts" style="gap:8px"><button class="btn ${cur === 2 ? 'pri' : ''}" data-act="pkPush" data-code="${esc(it.code)}" ${!d1 || genBusy || pushBusy ? 'disabled' : ''} style="flex:1;justify-content:center">${ic('shop', 16)}${sendLabel}</button>${pk.shopifyUrl ? `<a class="btn" href="${esc(pk.shopifyUrl)}" target="_blank" rel="noopener" title="Open in Shopify">↗</a>` : ''}</div>`;
+  const b3 = live || soldOut ? `<div class="sm" style="color:${soldOut ? '#F2C063' : '#5FE6AC'};font-weight:600;text-align:center;padding:8px">${soldOut ? 'Sold out' : '● Live on Shopify'}</div>` : `<button class="btn ${cur === 3 ? 'pri' : ''}" data-act="pkActivate" data-code="${esc(it.code)}" ${!pk.shopifyId || genBusy || pushBusy ? 'disabled' : ''} style="justify-content:center">${ic('check', 16)}Activate listing</button>`;
+  const s1 = !hasNotes ? '<span style="color:#F2C063">Write the lister notes above first.</span>' : d1 ? `Title, description, specs and metafields written${g.missing && g.missing.length ? ` · <span style="color:#F2C063">${g.missing.length} detail${g.missing.length === 1 ? '' : 's'} to add</span>` : ''}.` : g ? '<span style="color:#F2C063">Notes changed since it was written.</span>' : 'AI writes the title, description and specs from your notes with the SYG rulebook.';
+  const s2 = !d1 ? 'Filled in automatically once step 1 is done.' : !priced ? '<span style="color:#F2C063">Set a price to send it to Shopify.</span>' : d2 ? (live ? 'Shopify shows the latest listing.' : 'Draft is ready in Shopify with the written listing.') : pk.shopifyId ? 'Shopify has an older version — update it.' : 'Puts the written listing, photos and quantity on a Shopify draft.';
+  const s3 = live ? `Listed in the Vault${(pk.shopifyChannels || []).length ? ' · ' + pk.shopifyChannels.map(esc).join(', ') : ''}.` : pk.shopifyId ? 'Makes it active on Shopify and marks the units Listed here.' : 'Available once the draft exists.';
+  return `<div style="display:flex;gap:10px;flex-wrap:wrap">${tile(1, d1, 'Write listing', s1, b1)}${tile(2, d2, 'Shopify draft', s2, b2)}${tile(3, d3, 'Go live', s3, b3)}</div>`;
 }
 function packetCard(it, pk, photos, up, sh) {
   const tiles = photos.map((id, i) => `<div class="ph">${i === 0 ? '<span class="cover">Cover</span>' : ''}<img src="${esc(photoUrl(id))}" alt="Photo ${i + 1}" loading="lazy" onerror="this.style.opacity=.2"><div class="tools"><button data-act="phMove" data-code="${esc(it.code)}" data-i="${i}" data-d="-1" aria-label="Move left">${ic('chevL', 14)}</button>${i ? `<button data-act="phCover" data-code="${esc(it.code)}" data-i="${i}" aria-label="Make cover" title="Make cover">${ic('star', 14)}</button>` : ''}<button data-act="phDel" data-code="${esc(it.code)}" data-i="${i}" aria-label="Remove photo">${ic('trash', 14)}</button><button data-act="phMove" data-code="${esc(it.code)}" data-i="${i}" data-d="1" aria-label="Move right">${ic('chevR', 14)}</button></div></div>`).join('');
@@ -881,13 +901,13 @@ function packetCard(it, pk, photos, up, sh) {
     <div class="grid g4" style="gap:14px">${fIn(it, 'packet.title', 'Working title <span class="opt">optional — the final title is generated</span>', { cls: 'span3', icon: 'tag', ph: it.title })}${fIn(it, 'packet.price', 'Price', { money: 1, icon: 'cash', ph: it.resale })}
       <div class="fld spanall"><label for="if-packet-description"><span class="li">${ic('book', 14, 1.9)}</span>Lister notes <span class="opt">plain English — not the final description</span></label><textarea class="ta" id="if-packet-description" data-ifield="packet.description" data-code="${esc(it.code)}" rows="4" placeholder="${esc(NOTES_PLACEHOLDER[it.category] || NOTES_PLACEHOLDER.default)}">${esc(ival(it, 'packet.description') || '')}</textarea><span class="sm mut2">Write what you see and tested, like you'd tell a coworker. The Shopify title, description and specs are written from this with the SYG listing rulebook.</span></div>
       ${fIn(it, 'packet.included', 'Included <span class="opt">separate with commas — shown as bullet points</span>', { cls: 'span2', icon: 'box', ph: 'e.g. Console, 1 controller, HDMI cable, power cable' })}${fSel(it, 'packet.returnPolicy', 'Return policy', RETURN_POLICIES, { cls: 'span2', icon: 'sync' })}</div>
-    ${generatedPanel(it, pk)}
     ${qtyRow}
+    ${connected && !parent ? listingSteps(it, pk) : ''}
+    ${generatedPanel(it, pk)}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:16px">
       <span class="sm mut2">${connected ? `Shopify drafts enabled${sh.store ? ': ' + esc(sh.store) : ''} · SKU ${esc(it.code)}` : 'Shopify draft creation is off — export still works. <a href="#/settings">Configure it</a>'}</span>
       <div class="acts"><button class="btn" data-act="pkZip" data-code="${esc(it.code)}">${ic('down', 16)}Photos (.zip)</button><button class="btn" data-act="pkCsv" data-code="${esc(it.code)}">${ic('down', 16)}Shopify CSV</button>
-      ${connected && !parent ? (!pk.shopifyId ? `<button class="btn pri" data-act="pkPush" data-code="${esc(it.code)}">${ic('shop', 16)}Create Shopify draft</button>`
-        : `<button class="btn ${live ? 'pri' : ''}" data-act="pkPush" data-code="${esc(it.code)}">${ic('shop', 16)}${live ? 'Update Shopify listing' : 'Update Shopify draft'}</button>${live || soldOut ? '' : `<button class="btn pri" data-act="pkActivate" data-code="${esc(it.code)}">${ic('check', 16)}Activate Shopify listing</button>`}`) : ''}${pk.shopifyUrl ? `<a class="btn" href="${esc(pk.shopifyUrl)}" target="_blank" rel="noopener">Open in Shopify ↗</a>` : ''}</div></div></section>`;
+      ${pk.shopifyUrl ? `<a class="btn" href="${esc(pk.shopifyUrl)}" target="_blank" rel="noopener">Open in Shopify ↗</a>` : ''}</div></div></section>`;
 }
 function saleCard(it) {
   const s = it.sale;
@@ -1660,21 +1680,19 @@ const ACT = {
   pkGenerate: async el => {
     const it = S.items[el.dataset.code]; if (!ShopifyAdapter.configured()) return go('#/settings');
     if (!String((it.packet || {}).description || it.defect || '').trim()) return toast('Write the lister notes first.', 'err');
-    S.ui.genBusy = it.code; render();
-    try { const g = await ShopifyAdapter.generate(it.code); logAct('LT', 'generated the Shopify listing for', it.code, it.title, g.title); toast(g.missing && g.missing.length ? `Listing written. ${g.missing.length} detail${g.missing.length === 1 ? '' : 's'} to add to your notes.` : 'Listing written. Review the preview.'); }
-    catch (e) { toast((e && e.message) || 'Could not write the listing.', 'err'); }
-    finally { S.ui.genBusy = ''; render(); }
+    S.ui.genBusy = it.code; render(); let g;
+    try { g = await ShopifyAdapter.generate(it.code); logAct('LT', 'generated the Shopify listing for', it.code, it.title, g.title); }
+    catch (e) { S.ui.genBusy = ''; render(); return toast((e && e.message) || 'Could not write the listing.', 'err'); }
+    S.ui.genBusy = ''; render();
+    const fresh = S.items[it.code]; const missing = g.missing && g.missing.length ? ` ${g.missing.length} detail${g.missing.length === 1 ? '' : 's'} to add to your notes.` : '';
+    // Step 2 follows on its own: the written listing goes straight onto the Shopify draft.
+    if (!(packetOf(fresh).price > 0)) return toast('Listing written.' + missing + ' Set a price to send it to Shopify.');
+    await pushListing(fresh, { auto: true, note: missing });
   },
   pkPush: async el => {
     const it = S.items[el.dataset.code]; if (!ShopifyAdapter.configured()) return go('#/settings'); const p = packetOf(it);
     if (!String((it.packet || {}).description || it.defect || '').trim()) return toast('Write the lister notes first — the listing is generated from them.', 'err'); if (!(p.price > 0)) return toast('Enter a valid listing price.', 'err');
-    const productTab = window.open('', '_blank'); if (productTab) productTab.opener = null;
-    try { let lt = (it.packet || {}).code; if (!lt) { lt = await nextCode('LT'); await write(() => ref('items/' + it.code).update({ packet: { code: lt } })); }
-      const res = await ShopifyAdapter.pushDraft(it.code);
-      await write(() => ref('items/' + it.code).update({ packet: { shopifyId: String(res.id || ''), shopifyUrl: String(res.adminUrl || ''), shopifyStatus: String(res.status || 'DRAFT'), shopifyQty: num(res.quantity) || 1 } }));
-      if (productTab && res.adminUrl) productTab.location = res.adminUrl; else if (productTab) productTab.close();
-      logAct('LT', (it.packet || {}).shopifyId ? 'updated the Shopify draft for' : 'created a Shopify draft for', lt, it.title, S.settings.shopify.store || '', [it.code]); toast('Shopify draft saved.');
-    } catch (e) { if (productTab) productTab.close(); toast((e && e.message) || 'Shopify could not save the draft. Your packet is still safe in the Vault.', 'err'); }
+    await pushListing(it, { openTab: !(it.packet || {}).shopifyId });
   },
   sysRow: el => { const id = el.dataset.id; SYS.open[id] = !SYS.open[id]; render(); },
   sysFilter: el => { SYS.filter = el.dataset.v; render(); },
@@ -1865,6 +1883,21 @@ const ACT = {
   mClose: (el, ev) => { if (el.dataset.self && ev.target !== el) return; const M = S.modal; S.modal = null; if (M && M.resolve) M.resolve(false); render(); },
   mOk: () => { const M = S.modal; S.modalVal = M.val || ''; S.modal = null; render(); if (M.resolve) M.resolve(true); }
 };
+// Creates or updates the Shopify draft from the written listing. A tab only opens on a click
+// (browsers block tabs opened after a wait), so the automatic send shows the link instead.
+async function pushListing(it, o = {}) {
+  const productTab = o.openTab ? window.open('', '_blank') : null; if (productTab) productTab.opener = null;
+  S.ui.pushBusy = it.code; render();
+  try { let lt = (it.packet || {}).code; if (!lt) { lt = await nextCode('LT'); await write(() => ref('items/' + it.code).update({ packet: { code: lt } })); }
+    const res = await ShopifyAdapter.pushDraft(it.code);
+    await write(() => ref('items/' + it.code).update({ packet: { shopifyId: String(res.id || ''), shopifyUrl: String(res.adminUrl || ''), shopifyStatus: String(res.status || 'DRAFT'), shopifyQty: num(res.quantity) || 1, shopifyPushedHash: String(res.generatedHash || ''), shopifyPushedAt: nowISO() } }));
+    if (productTab && res.adminUrl) productTab.location = res.adminUrl; else if (productTab) productTab.close();
+    const created = !(it.packet || {}).shopifyId;
+    logAct('LT', created ? 'created a Shopify draft for' : 'updated the Shopify draft for', lt, it.title, S.settings.shopify.store || '', [it.code]);
+    toast(o.auto ? `Listing written and ${created ? 'added to a new Shopify draft' : 'updated on Shopify'}.${o.note || ''} Next: Activate.` : 'Shopify draft saved.');
+  } catch (e) { if (productTab) productTab.close(); toast((o.auto ? 'Listing written, but Shopify couldn’t save it: ' : '') + ((e && e.message) || 'Shopify could not save the draft. Your packet is still safe in the Vault.'), 'err'); }
+  finally { S.ui.pushBusy = ''; render(); }
+}
 async function saveSetting(patch) { try { const s = await ref('meta/settings').get(); if (s.exists) await write(() => ref('meta/settings').update(patch), 'settings'); else await write(() => ref('meta/settings').set({ ...DEFAULT_SETTINGS, ...patch }), 'settings'); } catch (e) {} }
 
 document.addEventListener('click', ev => {

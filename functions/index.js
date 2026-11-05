@@ -78,7 +78,9 @@ function logged(where, handler) {
     } catch (error) {
       console.error(`${where} failed:`, error);
       await logServerError(where, error, request);
-      throw error;
+      // A plain Error reaches the app as a bare "internal"; pass its message through instead.
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError('internal', String((error && error.message) || error || 'Unexpected server error').slice(0, 500));
     }
   };
 }
@@ -481,7 +483,7 @@ exports.shopifySaveDraft = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, S
   batch.set(itemRef, { packet: { shopifyId: product.id, shopifyUrl: adminUrl, shopifySku: sku, shopifyStatus: product.status || 'DRAFT', shopifyQty: quantity, shopifyInventoryItemId: variant.inventoryItem.id, units, shopifyMediaSent: media.map(m => m.originalSource), ...publish, shopifySyncedAt: FieldValue.serverTimestamp() } }, { merge: true });
   units.filter(code => code !== sku).forEach(code => batch.set(db.doc(`items/${code}`), { listedIn: sku }, { merge: true }));
   await batch.commit();
-  return { id: product.id, adminUrl, sku, status: product.status || 'DRAFT', quantity, units };
+  return { id: product.id, adminUrl, sku, status: product.status || 'DRAFT', quantity, units, generatedHash: gen.inputsHash || '' };
 }));
 
 // Puts a product on the store's sales channels (Online Store and Shop). Products created through
