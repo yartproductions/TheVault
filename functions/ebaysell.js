@@ -95,6 +95,15 @@ function fillAspects(ebayAspects, gen, overrides) {
   return { aspects, missing, filled };
 }
 
+// The packed box from the item's Package fields ({lb, oz, l, w, h}; older {weightLb, lengthIn, …} too).
+// eBay's calculated shipping needs the weight and all three sides.
+function packageOf(p) {
+  const n = v => { const x = Number(v); return x > 0 ? x : 0; };
+  const q = p || {};
+  const weightLb = n(q.weightLb) || +(n(q.lb) + n(q.oz) / 16).toFixed(3);
+  return { weightLb, lengthIn: n(q.lengthIn) || n(q.l), widthIn: n(q.widthIn) || n(q.w), heightIn: n(q.heightIn) || n(q.h) };
+}
+
 // Inventory item body: PUT /sell/inventory/v1/inventory_item/{sku}
 function inventoryItem({ gen, quantity, photos, aspects, packageInfo }) {
   const condition = conditionFor(gen);
@@ -124,10 +133,11 @@ function inventoryItem({ gen, quantity, photos, aspects, packageInfo }) {
     body.product.brand = brand;
     body.product.mpn = mpn;
   }
-  if (packageInfo && Number(packageInfo.weightLb) > 0) {
-    body.packageWeightAndSize = { weight: { value: Number(packageInfo.weightLb), unit: 'POUND' } };
-    if (Number(packageInfo.lengthIn) > 0 && Number(packageInfo.widthIn) > 0 && Number(packageInfo.heightIn) > 0)
-      body.packageWeightAndSize.dimensions = { length: Number(packageInfo.lengthIn), width: Number(packageInfo.widthIn), height: Number(packageInfo.heightIn), unit: 'INCH' };
+  const pk = packageOf(packageInfo);
+  if (pk.weightLb > 0) {
+    body.packageWeightAndSize = { weight: { value: pk.weightLb, unit: 'POUND' } };
+    if (pk.lengthIn > 0 && pk.widthIn > 0 && pk.heightIn > 0)
+      body.packageWeightAndSize.dimensions = { length: pk.lengthIn, width: pk.widthIn, height: pk.heightIn, unit: 'INCH' };
   }
   return body;
 }
@@ -148,8 +158,9 @@ function offer({ sku, categoryId, price, quantity, policies, locationKey, descri
 }
 
 // What still stops a publish, in plain words.
-function readiness({ gen, price, photos, settings, connected, missingAspects }) {
+function readiness({ gen, price, photos, settings, connected, missingAspects, packageInfo }) {
   const problems = [];
+  const box = packageOf(packageInfo);
   if (!connected) problems.push('Connect eBay in Settings first.');
   if (!gen) problems.push('Write the listing first (step 1).');
   if (!(Number(price) > 0)) problems.push('Set a price.');
@@ -157,6 +168,8 @@ function readiness({ gen, price, photos, settings, connected, missingAspects }) 
   const s = settings || {};
   if (!s.fulfillmentPolicyId || !s.paymentPolicyId || !s.returnPolicyId) problems.push('Pick your eBay shipping, payment and return policies in Settings.');
   if (!s.locationKey) problems.push('Save your ship-from location in Settings.');
+  if (!(box.weightLb > 0)) problems.push('Enter the packed weight under Package.');
+  if (!(box.lengthIn > 0 && box.widthIn > 0 && box.heightIn > 0)) problems.push('Enter the box size (L × W × H) under Package.');
   for (const m of missingAspects || []) problems.push(`eBay needs “${m.name}”.`);
   return problems;
 }
@@ -203,4 +216,4 @@ const ebayFee = (price, shipping, feePct) => +(((Number(price) || 0) + (Number(s
 const listingUrl = (env, listingId) => listingId ? `${(ENV[env] || ENV.production).web}/itm/${listingId}` : '';
 const consentUrl = (env, clientId, ruName, state) => `${(ENV[env] || ENV.production).auth}/oauth2/authorize?` + new URLSearchParams({ client_id: clientId, redirect_uri: ruName, response_type: 'code', scope: SCOPES.join(' '), state, prompt: 'login' }).toString();
 
-module.exports = { ENV, SCOPES, CONDITION_ENUM, conditionFor, knownDetails, fillAspects, inventoryItem, offer, readiness, descriptionHtml, orderLines, ebayFee, listingUrl, consentUrl };
+module.exports = { packageOf, ENV, SCOPES, CONDITION_ENUM, conditionFor, knownDetails, fillAspects, inventoryItem, offer, readiness, descriptionHtml, orderLines, ebayFee, listingUrl, consentUrl };

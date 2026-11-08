@@ -64,7 +64,9 @@ test('readiness explains what stops a publish', () => {
   assert.ok(p.some(x => /photo/.test(x)));
   assert.ok(p.some(x => /policies/.test(x)));
   assert.ok(p.some(x => /Color/.test(x)));
-  assert.deepEqual(E.readiness({ gen, price: 10, photos: ['https://x/a.jpg'], settings: { fulfillmentPolicyId: 1, paymentPolicyId: 2, returnPolicyId: 3, locationKey: 'main' }, connected: true, missingAspects: [] }), []);
+  assert.deepEqual(E.readiness({ gen, price: 10, photos: ['https://x/a.jpg'], settings: { fulfillmentPolicyId: 1, paymentPolicyId: 2, returnPolicyId: 3, locationKey: 'main' }, connected: true, missingAspects: [], packageInfo: { lb: 1, oz: 8, l: 8, w: 6, h: 3 } }), []);
+  assert.ok(p.some(x => /weight/.test(x)) && p.some(x => /box size/.test(x)));
+  assert.deepEqual(E.packageOf({ lb: 1, oz: 8, l: 8, w: 6, h: 3 }), { weightLb: 1.5, lengthIn: 8, widthIn: 6, heightIn: 3 });
 });
 
 test('description uses the template with the report, photos and no-returns wording', () => {

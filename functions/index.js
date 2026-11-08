@@ -1410,7 +1410,7 @@ exports.ebayDetails = onCall({ secrets: EBAY_SECRETS, timeoutSeconds: 60 }, logg
   const d = await ebayCategoryAndAspects(item, packet);
   const settings = await ebaySettings();
   const { inStock } = await resolveUnits(sku, packet, item);
-  const problems = ebaysell.readiness({ gen: packet.generated, price: Number(packet.price) || Number(item.resale), photos: packet.photos || [], settings, connected: !!settings.connected, missingAspects: d.missing });
+  const problems = ebaysell.readiness({ gen: packet.generated, price: Number(packet.price) || Number(item.resale), photos: packet.photos || [], settings, connected: !!settings.connected, missingAspects: d.missing, packageInfo: packet.package || null });
   if (!inStock.length) problems.push('No units in stock for this listing.');
   await snap.ref.set({ packet: { ebayCheck: { at: new Date().toISOString(), categoryId: d.category.id, categoryName: d.category.name, missing: d.missing, filled: d.filled, problems } } }, { merge: true });
   return { category: d.category, missing: d.missing, filled: d.filled, problems };
@@ -1428,7 +1428,7 @@ exports.ebayPublish = onCall({ secrets: EBAY_SECRETS, timeoutSeconds: 120 }, log
   const settings = await ebaySettings();
   const price = Number(packet.price) || 0;
   const d = await ebayCategoryAndAspects(item, packet);
-  const problems = ebaysell.readiness({ gen, price, photos: packet.photos || [], settings, connected: !!settings.connected, missingAspects: d.missing });
+  const problems = ebaysell.readiness({ gen, price, photos: packet.photos || [], settings, connected: !!settings.connected, missingAspects: d.missing, packageInfo: packet.package || null });
   if (problems.length) {
     await itemRef.set({ packet: { ebayCheck: { at: new Date().toISOString(), categoryId: d.category.id, categoryName: d.category.name, missing: d.missing, filled: d.filled, problems } } }, { merge: true });
     throw new HttpsError('failed-precondition', `Not ready for eBay: ${problems.join(' ')}`);
