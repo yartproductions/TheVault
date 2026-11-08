@@ -87,6 +87,13 @@ npx firebase-tools functions:secrets:set ANTHROPIC_API_KEY   # paste the Anthrop
 ```
 A listing costs a few cents and is regenerated only when the notes or details change.
 
+### Listing routes: Shopify or eBay direct
+Each packet has a **Route** (default in Settings → eBay direct):
+- **Shopify** — Write listing → Shopify draft → Activate. eBay, if wanted, goes through Marketplace Connect by hand.
+- **eBay direct** — Write listing → **Check eBay details** (eBay's required item details for the item's category, filled from the listing; anything missing is asked for on the packet) → **Publish to eBay**, live right away. Update / End from the packet.
+
+Setup (Settings → eBay direct): in the eBay developer account create a RuName (User Tokens → Get a Token from eBay via Your Application) with **auth accepted URL** `https://us-east1-obsidian-vault-38dfd.cloudfunctions.net/ebaySellerAuthCallback`, paste the RuName, press **Connect eBay** and sign in with the seller account, then load business policies and save the ship-from location. Tokens are stored in `private/ebaySeller` (closed to the app). `ebayOrdersPoll` books paid eBay orders every 10 minutes (exactly once, `ebayOrders/{id}`) and keeps eBay and Shopify quantities matched; a Shopify sale also updates the eBay quantity. Functions: `ebaySellerAuthStart`, `ebaySellerAuthCallback` (public), `ebaySellerDisconnect`, `ebaySellerSetup`, `ebayDetails`, `ebayPublish`, `ebayEnd`, `ebayOrdersPoll`; helpers in `functions/ebaysell.js`, description template `functions/ebay-template.html`.
+
 ### Product sync (Shopify → Vault)
 Settings → Shopify → **Connect Shopify sync** subscribes paid orders plus product updates and deletions, all to the existing `shopifyOrderWebhook` endpoint (no new public function).
 - **Deleted in Shopify:** the packet forgets the product (the steps go back to *Create Shopify draft*), Listed units return to Prepared, and the listing keeps its units so re-creating brings back the same quantity.

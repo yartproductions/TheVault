@@ -18,6 +18,8 @@ const db = getFirestore();
 const auth = getAuth();
 const BOOTSTRAP_OWNERS = new Set(['paulckinckay@gmail.com', 'kohlindersjohn@gmail.com']);
 const SHOPIFY_SHOP = defineSecret('SHOPIFY_SHOP');
+const EBAY_CLIENT_ID = defineSecret('EBAY_CLIENT_ID');
+const EBAY_CLIENT_SECRET = defineSecret('EBAY_CLIENT_SECRET');
 const SHOPIFY_CLIENT_ID = defineSecret('SHOPIFY_CLIENT_ID');
 const SHOPIFY_CLIENT_SECRET = defineSecret('SHOPIFY_CLIENT_SECRET');
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
@@ -705,7 +707,7 @@ async function handleProductWebhook(topic, body) {
   return `Synced ${skus.join(', ')}`;
 }
 
-exports.shopifyOrderWebhook = onRequest({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET], invoker: 'public', timeoutSeconds: 30 }, async (req, res) => {
+exports.shopifyOrderWebhook = onRequest({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET, EBAY_CLIENT_ID, EBAY_CLIENT_SECRET], invoker: 'public', timeoutSeconds: 60 }, async (req, res) => {
   if (req.method !== 'POST') return res.status(405).send('POST only');
   if (!orders.validShopifyHmac(req.rawBody, req.get('X-Shopify-Hmac-Sha256'), SHOPIFY_CLIENT_SECRET.value())) {
     await writeSyslog('warn', 'shopifyOrderWebhook', 'Rejected a webhook with a bad signature.', `topic: ${req.get('X-Shopify-Topic') || '?'}`);
@@ -790,6 +792,10 @@ exports.shopifyOrderWebhook = onRequest({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT
     for (const x of outcome.sales) {
       await appendActivity({ verb: 'recorded Shopify sale', code: x.sl, obj: x.title, detail: `Shopify ${orderName} · $${x.price.toFixed(2)} · net $${x.profit.toFixed(2)}`, links: [x.code, x.tx], from: x.from, to: 'Sold' });
     }
+    // A Shopify sale changes stock: the eBay listing (if any) follows, ending at zero.
+    for (const listingSku of new Set(outcome.sales.map(x => x.listing))) {
+      await ebaySyncStock(listingSku).catch(e => writeSyslog('warn', 'shopifyOrderWebhook', `Couldn’t update eBay quantity for ${listingSku}: ${e.message}`, ''));
+    }
     if (outcome.problems.length) {
       await writeSyslog('warn', 'shopifyOrderWebhook', `Shopify order ${orderName}: ${outcome.problems.length} line(s) not matched to Vault stock.`, outcome.problems.map(p => `${p.sku || '(no SKU)'} ${p.title} ×${p.qty}: ${p.reason}`).join('\n'));
     }
@@ -836,8 +842,6 @@ exports.shopifyConnectOrders = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_I
 // Only numbers and listing ids are kept, never copies of other people's listings.
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const market = require('./market');
-const EBAY_CLIENT_ID = defineSecret('EBAY_CLIENT_ID');
-const EBAY_CLIENT_SECRET = defineSecret('EBAY_CLIENT_SECRET');
 const EBAY_VERIFICATION_TOKEN = defineSecret('EBAY_VERIFICATION_TOKEN');
 const EBAY_SECRETS = [EBAY_CLIENT_ID, EBAY_CLIENT_SECRET];
 const EBAY_DELETION_ENDPOINT = 'https://us-east1-obsidian-vault-38dfd.cloudfunctions.net/ebayAccountDeletion';
@@ -1190,3 +1194,331 @@ exports.photoCleanupRun = onCall({ secrets: [SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SH
   const report = await runPhotoCleanup({ dryRun: !(request.data && request.data.run === true) });
   return { ...report, mb: +(report.bytes / 1e6).toFixed(1) };
 }));
+
+// ── eBay direct selling (Sell Inventory API) ─────────────────────────
+// The seller account that signs in (Settings → Connect eBay) authorizes the Vault; every listing is
+// made as that account. Tokens live in private/ebaySeller, which the app itself can never read.
+const ebaysell = require('./ebaysell');
+const EBAY_AUTH_CALLBACK = 'https://us-east1-obsidian-vault-38dfd.cloudfunctions.net/ebaySellerAuthCallback';
+const EBAY_APP_URL = 'https://yartproductions.github.io/TheVault/';
+const ebayEnv = () => 'production';
+const ebayBasic = () => Buffer.from(`${EBAY_CLIENT_ID.value().trim()}:${EBAY_CLIENT_SECRET.value().trim()}`).toString('base64');
+
+async function ebaySettings() {
+  const snap = await db.doc('meta/settings').get();
+  return ((snap.exists && snap.data()) || {}).ebay || {};
+}
+
+async function ebayTokenRequest(params) {
+  const response = await fetch(`${ebaysell.ENV[ebayEnv()].api}/identity/v1/oauth2/token`, {
+    method: 'POST',
+    headers: { Authorization: `Basic ${ebayBasic()}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(params)
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) throw new HttpsError('failed-precondition', `eBay sign-in failed: ${json.error_description || json.error || response.status}. Connect eBay again in Settings.`);
+  return json;
+}
+
+// A fresh user token for the connected seller (access tokens last 2 hours; refresh tokens about 18 months).
+async function ebayUserToken() {
+  const ref = db.doc('private/ebaySeller');
+  const snap = await ref.get();
+  const s = snap.exists ? snap.data() : null;
+  if (!s || !s.refreshToken) throw new HttpsError('failed-precondition', 'eBay isn’t connected. Press Connect eBay in Settings.');
+  if (s.accessToken && Date.now() < (s.accessExpiresAt || 0) - 60000) return s.accessToken;
+  const json = await ebayTokenRequest({ grant_type: 'refresh_token', refresh_token: s.refreshToken, scope: ebaysell.SCOPES.join(' ') });
+  await ref.set({ accessToken: json.access_token, accessExpiresAt: Date.now() + (json.expires_in || 7200) * 1000 }, { merge: true });
+  return json.access_token;
+}
+
+// Calls a Sell API as the connected seller; eBay's own error text comes back to the app.
+async function ebaySell(method, apiPath, body) {
+  const token = await ebayUserToken();
+  const response = await fetch(`${ebaysell.ENV[ebayEnv()].api}${apiPath}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Content-Language': 'en-US', 'Accept-Language': 'en-US', 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const text = await response.text();
+  const json = text ? (() => { try { return JSON.parse(text); } catch (e) { return { raw: text }; } })() : {};
+  if (!response.ok) {
+    const errs = (json.errors || []).map(e => e.longMessage || e.message).filter(Boolean);
+    const err = new HttpsError('failed-precondition', `eBay: ${errs.join(' · ') || `HTTP ${response.status}`}`);
+    err.ebayErrors = json.errors || [];
+    err.status = response.status;
+    throw err;
+  }
+  return json;
+}
+
+// Settings → Connect eBay: the sign-in link for eBay's own consent page.
+exports.ebaySellerAuthStart = onCall({ secrets: EBAY_SECRETS }, logged('ebaySellerAuthStart', async request => {
+  await ownerFor(request);
+  const s = await ebaySettings();
+  if (!s.ruName) throw new HttpsError('failed-precondition', 'Paste your eBay RuName in Settings → eBay first.');
+  const state = require('crypto').randomBytes(16).toString('hex');
+  await db.doc('private/ebayAuthState').set({ state, uid: request.auth.uid, at: Date.now() });
+  return { url: ebaysell.consentUrl(ebayEnv(), EBAY_CLIENT_ID.value().trim(), s.ruName, state) };
+}));
+
+// eBay sends the seller back here after they approve; the code is swapped for tokens.
+exports.ebaySellerAuthCallback = onRequest({ secrets: EBAY_SECRETS, invoker: 'public' }, async (req, res) => {
+  const back = (q) => res.redirect(302, `${EBAY_APP_URL}?${new URLSearchParams(q).toString()}#/settings`);
+  try {
+    const { code, state } = req.query;
+    const st = (await db.doc('private/ebayAuthState').get()).data() || {};
+    if (!code) return back({ ebay: 'declined' });
+    if (!state || state !== st.state || Date.now() - (st.at || 0) > 15 * 60000) return back({ ebay: 'expired' });
+    const s = await ebaySettings();
+    const json = await ebayTokenRequest({ grant_type: 'authorization_code', code: String(code), redirect_uri: s.ruName });
+    let seller = '';
+    try {
+      const u = await fetch('https://apiz.ebay.com/commerce/identity/v1/user/', { headers: { Authorization: `Bearer ${json.access_token}` } });
+      if (u.ok) seller = (await u.json()).username || '';
+    } catch (e) {}
+    await db.doc('private/ebaySeller').set({
+      refreshToken: json.refresh_token, refreshExpiresAt: Date.now() + (json.refresh_token_expires_in || 0) * 1000,
+      accessToken: json.access_token, accessExpiresAt: Date.now() + (json.expires_in || 7200) * 1000,
+      connectedBy: st.uid || '', connectedAt: new Date().toISOString(), seller
+    });
+    await db.doc('private/ebayAuthState').delete();
+    await db.doc('meta/settings').set({ ebay: { connected: true, seller, connectedAt: new Date().toISOString() } }, { merge: true });
+    await appendActivity({ type: 'SYS', verb: 'connected eBay seller', code: 'EBAY', obj: seller || 'eBay account', detail: 'Direct listing enabled' });
+    return back({ ebay: 'connected' });
+  } catch (error) {
+    await writeSyslog('error', 'ebaySellerAuthCallback', `eBay connect failed: ${error.message}`, '');
+    return back({ ebay: 'error' });
+  }
+});
+
+exports.ebaySellerDisconnect = onCall({}, logged('ebaySellerDisconnect', async request => {
+  await ownerFor(request);
+  await db.doc('private/ebaySeller').delete();
+  await db.doc('meta/settings').set({ ebay: { connected: false, seller: '' } }, { merge: true });
+  return { ok: true };
+}));
+
+// Settings: the seller's business policies and locations, and saving the ship-from location.
+exports.ebaySellerSetup = onCall({ secrets: EBAY_SECRETS, timeoutSeconds: 60 }, logged('ebaySellerSetup', async request => {
+  await ownerFor(request);
+  const d = request.data || {};
+  if (d.action === 'location') {
+    const a = d.address || {};
+    if (!a.postalCode || !a.city || !a.stateOrProvince) throw new HttpsError('invalid-argument', 'Enter the city, state and ZIP code you ship from.');
+    const key = 'vault-main';
+    try {
+      await ebaySell('POST', `/sell/inventory/v1/location/${key}`, { location: { address: { city: a.city, stateOrProvince: a.stateOrProvince, postalCode: a.postalCode, country: 'US', ...(a.addressLine1 ? { addressLine1: a.addressLine1 } : {}) } }, locationTypes: ['WAREHOUSE'], merchantLocationStatus: 'ENABLED', name: 'Vault ship-from' });
+    } catch (error) {
+      if (!(error.ebayErrors || []).some(e => e.errorId === 25803)) throw error; // 25803: already exists
+      await ebaySell('POST', `/sell/inventory/v1/location/${key}/update_location_details`, { location: { address: { city: a.city, stateOrProvince: a.stateOrProvince, postalCode: a.postalCode, country: 'US' } } });
+    }
+    await db.doc('meta/settings').set({ ebay: { locationKey: key, location: `${a.city}, ${a.stateOrProvince} ${a.postalCode}` } }, { merge: true });
+    return { locationKey: key };
+  }
+  const get = async kind => {
+    try { const r = await ebaySell('GET', `/sell/account/v1/${kind}_policy?marketplace_id=EBAY_US`); return r[`${kind}Policies`] || []; }
+    catch (error) { if ((error.ebayErrors || []).some(e => e.errorId === 20403)) throw new HttpsError('failed-precondition', 'This eBay account isn’t set up for business policies yet. In eBay: Account settings → Business policies → opt in, then create shipping, payment and return policies.'); throw error; }
+  };
+  const [fulfillment, payment, returns] = await Promise.all([get('fulfillment'), get('payment'), get('return')]);
+  const pick = (list, idKey) => list.map(p => ({ id: String(p[idKey]), name: p.name, ...(p.returnsAccepted != null ? { returnsAccepted: !!p.returnsAccepted } : {}) }));
+  return { fulfillment: pick(fulfillment, 'fulfillmentPolicyId'), payment: pick(payment, 'paymentPolicyId'), returns: pick(returns, 'returnPolicyId') };
+}));
+
+// The item's eBay category and required item details, filled from the listing where possible.
+async function ebayCategoryAndAspects(item, packet) {
+  const gen = packet.generated;
+  const appToken = await ebayToken();
+  let category = packet.ebayCategoryId ? { id: String(packet.ebayCategoryId), name: packet.ebayCategoryName || '' } : null;
+  if (!category && gen && gen.title) category = await suggestCategory(appToken, gen.title);
+  if (!category && gen && gen.ebay && gen.ebay.ebay_category_id) category = { id: String(gen.ebay.ebay_category_id), name: '' };
+  if (!category) throw new HttpsError('failed-precondition', 'Couldn’t find an eBay category for this item. Write the listing first, or set the eBay category ID on the packet.');
+  const r = await fetch(`https://api.ebay.com/commerce/taxonomy/v1/category_tree/0/get_item_aspects_for_category?category_id=${encodeURIComponent(category.id)}`, { headers: { Authorization: `Bearer ${appToken}` } });
+  const json = await r.json().catch(() => ({}));
+  if (!r.ok) throw new HttpsError('failed-precondition', `eBay couldn’t list the details for category ${category.id}${json.errors ? `: ${json.errors.map(e => e.message).join(' · ')}` : ''}. It may not be a leaf category — set a more specific category ID.`);
+  return { category, ...ebaysell.fillAspects(json.aspects || [], gen, packet.ebayAspects || {}) };
+}
+
+exports.ebayDetails = onCall({ secrets: EBAY_SECRETS, timeoutSeconds: 60 }, logged('ebayDetails', async request => {
+  await memberFor(request);
+  const sku = String((request.data || {}).code || '');
+  const snap = await db.doc(`items/${sku}`).get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Item not found.');
+  const item = snap.data(); const packet = item.packet || {};
+  if (!packet.generated) throw new HttpsError('failed-precondition', 'Write the listing first (step 1) — eBay’s details are filled from it.');
+  const d = await ebayCategoryAndAspects(item, packet);
+  const settings = await ebaySettings();
+  const { inStock } = await resolveUnits(sku, packet, item);
+  const problems = ebaysell.readiness({ gen: packet.generated, price: Number(packet.price) || Number(item.resale), photos: packet.photos || [], settings, connected: !!settings.connected, missingAspects: d.missing });
+  if (!inStock.length) problems.push('No units in stock for this listing.');
+  await snap.ref.set({ packet: { ebayCheck: { at: new Date().toISOString(), categoryId: d.category.id, categoryName: d.category.name, missing: d.missing, filled: d.filled, problems } } }, { merge: true });
+  return { category: d.category, missing: d.missing, filled: d.filled, problems };
+}));
+
+// Publish (or update) the item on eBay: inventory item → offer → publish. Live as soon as eBay accepts it.
+exports.ebayPublish = onCall({ secrets: EBAY_SECRETS, timeoutSeconds: 120 }, logged('ebayPublish', async request => {
+  const user = await memberFor(request);
+  const sku = String((request.data || {}).code || '');
+  const itemRef = db.doc(`items/${sku}`);
+  const snap = await itemRef.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Item not found.');
+  const item = snap.data(); const packet = item.packet || {};
+  const gen = packet.generated;
+  const settings = await ebaySettings();
+  const price = Number(packet.price) || 0;
+  const d = await ebayCategoryAndAspects(item, packet);
+  const problems = ebaysell.readiness({ gen, price, photos: packet.photos || [], settings, connected: !!settings.connected, missingAspects: d.missing });
+  if (problems.length) {
+    await itemRef.set({ packet: { ebayCheck: { at: new Date().toISOString(), categoryId: d.category.id, categoryName: d.category.name, missing: d.missing, filled: d.filled, problems } } }, { merge: true });
+    throw new HttpsError('failed-precondition', `Not ready for eBay: ${problems.join(' ')}`);
+  }
+  const { units, inStock } = await resolveUnits(sku, packet, item);
+  if (!inStock.length) throw new HttpsError('failed-precondition', 'No units in stock for this listing.');
+  const policies = { fulfillment: settings.fulfillmentPolicyId, payment: settings.paymentPolicyId, returns: (gen.ebay || {}).ebay_returns_accepted === 'No' && settings.noReturnPolicyId ? settings.noReturnPolicyId : settings.returnPolicyId };
+  const descriptionHtml = ebaysell.descriptionHtml(gen, { photos: packet.photos || [], standardWear: true });
+
+  await ebaySell('PUT', `/sell/inventory/v1/inventory_item/${encodeURIComponent(sku)}`, ebaysell.inventoryItem({ gen, quantity: inStock.length, photos: packet.photos || [], aspects: d.aspects, packageInfo: packet.package || null }));
+  const offerBody = ebaysell.offer({ sku, categoryId: d.category.id, price, quantity: inStock.length, policies, locationKey: settings.locationKey, descriptionHtml });
+  let offerId = (packet.ebay || {}).offerId || '';
+  if (!offerId) {
+    const existing = await ebaySell('GET', `/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}&marketplace_id=EBAY_US`).catch(() => ({}));
+    offerId = ((existing.offers || [])[0] || {}).offerId || '';
+  }
+  if (offerId) await ebaySell('PUT', `/sell/inventory/v1/offer/${offerId}`, offerBody);
+  else offerId = (await ebaySell('POST', '/sell/inventory/v1/offer', offerBody)).offerId;
+  let listingId = (packet.ebay || {}).listingId || '';
+  const wasLive = (packet.ebay || {}).status === 'ACTIVE' && listingId;
+  if (!wasLive) listingId = (await ebaySell('POST', `/sell/inventory/v1/offer/${offerId}/publish`, {})).listingId || listingId;
+
+  const now = new Date().toISOString();
+  const ebay = { offerId, listingId, url: ebaysell.listingUrl(ebayEnv(), listingId), status: 'ACTIVE', categoryId: d.category.id, categoryName: d.category.name, quantity: inStock.length, price, publishedAt: (packet.ebay || {}).publishedAt || now, updatedAt: now, seller: settings.seller || '' };
+  const batch = db.batch();
+  batch.set(itemRef, { packet: { ebay, units, ebayCheck: { at: now, categoryId: d.category.id, categoryName: d.category.name, missing: [], filled: d.filled, problems: [] } } }, { merge: true });
+  inStock.forEach(code => batch.set(db.doc(`items/${code}`), code === sku ? { status: 'list', updatedAt: now } : { status: 'list', updatedAt: now, listedIn: sku }, { merge: true }));
+  await batch.commit();
+  await appendActivity({ type: 'LT', verb: wasLive ? 'updated the eBay listing for' : 'listed on eBay', code: sku, obj: gen.title || item.title || '', detail: `${settings.seller || 'eBay'} · $${price.toFixed(2)} × ${inStock.length}`, links: inStock, from: wasLive ? '' : 'Prepared', to: 'Listed', uid: user.uid });
+  return ebay;
+}));
+
+// End the eBay listing (units go back to Prepared unless also active on Shopify).
+async function ebayEndListing(sku, reason) {
+  const itemRef = db.doc(`items/${sku}`);
+  const snap = await itemRef.get();
+  const item = snap.data() || {}; const packet = item.packet || {};
+  const e = packet.ebay || {};
+  if (!e.offerId) return { ended: false };
+  try { await ebaySell('POST', `/sell/inventory/v1/offer/${e.offerId}/withdraw`, {}); }
+  catch (error) { if (error.status !== 404 && !(error.ebayErrors || []).some(x => x.errorId === 25713)) throw error; }
+  const now = new Date().toISOString();
+  const batch = db.batch();
+  batch.set(itemRef, { packet: { ebay: { ...e, status: 'ENDED', endedAt: now, endReason: reason } } }, { merge: true });
+  if (reason !== 'sold out' && packet.shopifyStatus !== 'ACTIVE') {
+    const { inStock } = await resolveUnits(sku, packet, item);
+    inStock.forEach(code => batch.set(db.doc(`items/${code}`), { status: 'prep', updatedAt: now }, { merge: true }));
+  }
+  await batch.commit();
+  return { ended: true };
+}
+exports.ebayEnd = onCall({ secrets: EBAY_SECRETS, timeoutSeconds: 60 }, logged('ebayEnd', async request => {
+  const user = await memberFor(request);
+  const sku = String((request.data || {}).code || '');
+  const r = await ebayEndListing(sku, 'ended in the Vault');
+  await appendActivity({ type: 'LT', verb: 'ended the eBay listing for', code: sku, obj: '', detail: '', uid: user.uid });
+  return r;
+}));
+
+// Keeps eBay's quantity equal to the Vault's stock; ends the listing at zero.
+async function ebaySyncStock(sku) {
+  const snap = await db.doc(`items/${sku}`).get();
+  if (!snap.exists) return null;
+  const item = snap.data(); const packet = item.packet || {}; const e = packet.ebay || {};
+  if (!e.offerId || e.status !== 'ACTIVE') return null;
+  const { inStock } = await resolveUnits(sku, packet, item);
+  if (!inStock.length) return ebayEndListing(sku, 'sold out');
+  await ebaySell('POST', '/sell/inventory/v1/bulk_update_price_quantity', { requests: [{ sku, shipToLocationAvailability: { quantity: inStock.length }, offers: [{ offerId: e.offerId, availableQuantity: inStock.length }] }] });
+  await snap.ref.set({ packet: { ebay: { ...e, quantity: inStock.length, updatedAt: new Date().toISOString() } } }, { merge: true });
+  return { quantity: inStock.length };
+}
+
+// Books one eBay order exactly once (marker ebayOrders/{orderId}), same unit picking as Shopify sales.
+async function bookEbayOrder(order, feePct) {
+  const lines = ebaysell.orderLines(order);
+  if (!lines.length) return { sales: [], skus: [] };
+  const orderName = String(order.orderId);
+  const buyer = String((order.buyer && order.buyer.username) || '');
+  const date = String(order.creationDate || new Date().toISOString()).slice(0, 10);
+  return db.runTransaction(async t => {
+    const marker = db.doc(`ebayOrders/${order.orderId}`);
+    if ((await t.get(marker)).exists) return { sales: [], skus: [], duplicate: true };
+    const picks = [];
+    for (const l of lines) {
+      const mainSnap = await t.get(db.doc(`items/${l.sku}`));
+      if (!mainSnap.exists) { picks.push({ ...l, picked: [], reason: 'listing not in the Vault' }); continue; }
+      const main = mainSnap.data();
+      const units = [{ code: l.sku, ...main }];
+      for (const code of listingUnits(l.sku, (main.packet || {}).units).filter(c => c !== l.sku)) {
+        const u = await t.get(db.doc(`items/${code}`));
+        if (u.exists && (!u.data().listedIn || u.data().listedIn === l.sku)) units.push({ code, ...u.data() });
+      }
+      const taken = new Set(picks.flatMap(p => p.picked));
+      const picked = orders.pickUnits(units.filter(u => !taken.has(u.code)), l.qty);
+      picks.push({ ...l, picked, units, reason: picked.length < l.qty ? `only ${picked.length} of ${l.qty} in stock` : '' });
+    }
+    const soldCount = picks.reduce((n, p) => n + p.picked.length, 0);
+    const counters = {};
+    if (soldCount) for (const k of ['SL', 'TX']) { const c = await t.get(db.doc(`counters/${k}`)); counters[k] = c.exists ? Number(c.data().n) || 0 : 0; }
+    const now = new Date().toISOString();
+    const sales = [];
+    for (const p of picks) {
+      const fees = ebaysell.ebayFee(p.price, p.shipping, feePct);
+      for (const code of p.picked) {
+        const unit = p.units.find(u => u.code === code);
+        const sl = `SL-${String(++counters.SL).padStart(4, '0')}`;
+        const tx = `TX-${String(++counters.TX).padStart(4, '0')}`;
+        const net = +(p.price - fees).toFixed(2);
+        const profit = +(net - (Number(unit.cost) || 0)).toFixed(2);
+        const sale = { code: sl, txCode: tx, channel: 'eBay', price: p.price, fees, ship: 0, date, order: orderName, tracking: '', buyer };
+        t.set(db.doc(`sales/${sl}`), { ...sale, item: code, net, profit, by: 'sys', ebayOrderId: orderName, createdAt: now });
+        t.set(db.doc(`items/${code}`), { status: 'sold', sale, updatedAt: now, updatedBy: 'sys' }, { merge: true });
+        t.set(db.doc(`txs/${tx}`), { code: tx, date, desc: `Sale ${sl} · ${unit.title || code}`, amount: net, category: 'Sales', method: 'Payout', by: 'sys', payee: buyer, ref: orderName, link: sl, tags: 'eBay', notes: `eBay order ${orderName}: price ${p.price.toFixed(2)} − est. fees ${fees.toFixed(2)} (buyer paid shipping ${p.shipping.toFixed(2)})`, createdAt: now });
+        sales.push({ sl, tx, code, title: unit.title || code, price: p.price, profit, from: unit.status });
+      }
+    }
+    if (soldCount) for (const k of ['SL', 'TX']) t.set(db.doc(`counters/${k}`), { n: counters[k] });
+    t.set(marker, { date, buyer, sales: sales.map(x => x.sl), items: sales.map(x => x.code), problems: picks.filter(p => p.reason).map(p => ({ sku: p.sku, qty: p.qty, reason: p.reason })), receivedAt: now });
+    return { sales, skus: [...new Set(picks.filter(p => p.picked.length).map(p => p.sku))], problems: picks.filter(p => p.reason) };
+  });
+}
+
+// Every 10 minutes: new paid eBay orders → Sold in the Vault, then quantities on eBay and Shopify follow.
+exports.ebayOrdersPoll = onSchedule({ schedule: 'every 10 minutes', timeZone: 'America/New_York', secrets: [...EBAY_SECRETS, SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET], timeoutSeconds: 300 }, async () => {
+  const settings = await ebaySettings();
+  if (!settings.connected) return;
+  const stateRef = db.doc('private/ebayPoll');
+  const last = ((await stateRef.get()).data() || {}).since || new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const since = new Date(Date.parse(last) - 3600 * 1000).toISOString(); // overlap an hour; markers keep it exactly-once
+  const startedAt = new Date().toISOString();
+  const s = (await db.doc('meta/settings').get()).data() || {};
+  try {
+    let next = `/sell/fulfillment/v1/order?filter=${encodeURIComponent(`creationdate:[${since}..]`)}&limit=50`;
+    const touched = new Set();
+    for (let page = 0; next && page < 10; page++) {
+      const r = await ebaySell('GET', next);
+      for (const order of r.orders || []) {
+        const out = await bookEbayOrder(order, s.feePct);
+        out.skus.forEach(x => touched.add(x));
+        for (const x of out.sales) await appendActivity({ verb: 'recorded eBay sale', code: x.sl, obj: x.title, detail: `eBay ${order.orderId} · $${x.price.toFixed(2)} · net $${x.profit.toFixed(2)}`, links: [x.code, x.tx], from: x.from, to: 'Sold' });
+        if ((out.problems || []).length) await writeSyslog('warn', 'ebayOrdersPoll', `eBay order ${order.orderId}: ${out.problems.length} line(s) not matched to Vault stock.`, out.problems.map(p => `${p.sku} ×${p.qty}: ${p.reason}`).join('\n'));
+      }
+      next = r.next ? r.next.replace(/^https:\/\/api(\.sandbox)?\.ebay\.com/, '') : '';
+    }
+    for (const sku of touched) {
+      await ebaySyncStock(sku).catch(e => writeSyslog('warn', 'ebayOrdersPoll', `Couldn’t update eBay quantity for ${sku}: ${e.message}`, ''));
+      const it = (await db.doc(`items/${sku}`).get()).data() || {};
+      if ((it.packet || {}).shopifyId) await shopifyToken().then(c => syncListingStock(c, sku)).catch(e => writeSyslog('warn', 'ebayOrdersPoll', `Couldn’t update Shopify quantity for ${sku}: ${e.message}`, ''));
+    }
+    await stateRef.set({ since: startedAt, lastRunAt: startedAt }, { merge: true });
+  } catch (error) {
+    await writeSyslog('error', 'ebayOrdersPoll', `eBay order check failed: ${error.message}`, '');
+  }
+});

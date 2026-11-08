@@ -852,7 +852,7 @@ function generatedPanel(it, pk) {
   const list = (items, color) => items.map(x => `<li style="color:${color}">${esc(x)}</li>`).join('');
   const gradeColor = g.grade === 'For Parts' ? '#F2A08A' : g.grade === 'Used – Fair' ? '#F2C063' : '#5FE6AC';
   return `<div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:12px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><b>Shopify listing preview</b> <span class="sm mut2">· ${esc(g.type)} · written ${agoText(g.at)}${g.provider ? ` by ${g.provider === 'openai' ? 'OpenAI' : 'Claude'}${g.model ? ` <span class="mono">(${esc(g.model)})</span>` : ''}` : ''}${g.searches ? ` · ${g.searches} web lookup${g.searches === 1 ? '' : 's'}` : ''}${g.cost != null ? ` · ≈ $${(+g.cost).toFixed(3)}${g.costEstimate ? ' est.' : ''}${g.usage && g.usage.cache_read_input_tokens ? ' (rulebook cached)' : ''}` : ''}</span></div>${btn}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><b>${routeOf(it) === 'ebay' ? 'eBay listing preview' : 'Shopify listing preview'}</b> <span class="sm mut2">· ${esc(g.type)} · written ${agoText(g.at)}${g.provider ? ` by ${g.provider === 'openai' ? 'OpenAI' : 'Claude'}${g.model ? ` <span class="mono">(${esc(g.model)})</span>` : ''}` : ''}${g.searches ? ` · ${g.searches} web lookup${g.searches === 1 ? '' : 's'}` : ''}${g.cost != null ? ` · ≈ $${(+g.cost).toFixed(3)}${g.costEstimate ? ' est.' : ''}${g.usage && g.usage.cache_read_input_tokens ? ' (rulebook cached)' : ''}` : ''}</span></div>${btn}</div>
     ${stale ? '<div class="notice"><div>The notes or details changed since this was written. Press <b>Rewrite listing</b> in step 1 to update it and the Shopify draft.</div></div>' : ''}
     <div><div class="sm mut2">Title · ${g.title.length}/80</div><div style="font-size:16px;font-weight:600;margin-top:2px">${esc(g.title)}</div></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;font-weight:700;padding:4px 9px;border-radius:7px;background:#111615;border:1px solid ${gradeColor};color:${gradeColor}">${esc(g.grade)}</span><span class="sm mut">${esc(g.conditionText)}</span></div>
@@ -865,6 +865,42 @@ function generatedPanel(it, pk) {
   </div>`;
 }
 // The three listing steps: write the listing → it fills the Shopify draft → go live.
+// eBay direct route: write the listing → fill eBay's required details → publish (live right away).
+function ebaySteps(it, pk) {
+  const g = pk.generated; const stale = !g || generatedStale(it, pk);
+  const e = pk.ebay || {}; const live = e.status === 'ACTIVE';
+  const chk = pk.ebayCheck || null; const genBusy = S.ui.genBusy === it.code; const ebBusy = S.ui.ebBusy === it.code;
+  const hasNotes = !!String(pk.description || it.defect || '').trim(); const priced = packetOf(it).price > 0;
+  const checkFresh = chk && g && Date.parse(chk.at) >= Date.parse(g.at || 0);
+  const d1 = !stale; const missing = (chk && chk.missing) || []; const problems = (chk && chk.problems) || [];
+  const d2 = d1 && checkFresh && !missing.length; const d3 = live;
+  const cur = !d1 ? 1 : !d2 ? 2 : !d3 ? 3 : 0;
+  const tile = (n, done, title, sub, button) => `<div style="flex:1 1 210px;display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:12px;background:${cur === n ? '#0F2A1F' : 'var(--card2)'};border:1px solid ${cur === n ? '#3DDC97' : 'var(--line)'}">
+      <div style="display:flex;align-items:center;gap:10px"><span style="display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;font-size:13px;font-weight:700;background:${done ? '#3DDC97' : cur === n ? '#163B2C' : '#1A2120'};color:${done ? '#06120D' : cur === n ? '#5FE6AC' : '#7D8B85'}">${done ? '✓' : n}</span><b style="font-size:14px">${title}</b></div>
+      <div class="sm mut2" style="flex-grow:1;line-height:1.45">${sub}</div>${button}</div>`;
+  const b1 = `<button class="btn ${cur === 1 ? 'pri' : ''}" data-act="pkGenerate" data-code="${esc(it.code)}" ${genBusy || ebBusy ? 'disabled' : ''} style="justify-content:center">${ic('star', 16)}${genBusy ? 'Writing the listing…' : g ? 'Rewrite listing' : 'Write listing'}</button>`;
+  const b2 = `<button class="btn ${cur === 2 ? 'pri' : ''}" data-act="ebDetails" data-code="${esc(it.code)}" ${!d1 || genBusy || ebBusy ? 'disabled' : ''} style="justify-content:center">${ic('check', 16)}${ebBusy && S.ui.ebWhat === 'details' ? 'Asking eBay…' : checkFresh ? 'Check again' : 'Check eBay details'}</button>`;
+  const b3 = live
+    ? `<div class="acts" style="gap:8px"><a class="btn pri" href="${esc(e.url)}" target="_blank" rel="noopener" style="flex:1;justify-content:center">● Live on eBay ↗</a><button class="btn" data-act="ebPublish" data-code="${esc(it.code)}" ${ebBusy ? 'disabled' : ''} title="Send the latest listing, price and quantity to eBay">${ebBusy && S.ui.ebWhat === 'publish' ? 'Updating…' : 'Update'}</button><button class="btn" data-act="ebEnd" data-code="${esc(it.code)}" ${ebBusy ? 'disabled' : ''}>End</button></div>`
+    : `<button class="btn ${cur === 3 ? 'pri' : ''}" data-act="ebPublish" data-code="${esc(it.code)}" ${!d2 || !priced || genBusy || ebBusy || !EbayAdapter.connected() ? 'disabled' : ''} style="justify-content:center">${ic('shop', 16)}${ebBusy && S.ui.ebWhat === 'publish' ? 'Publishing to eBay…' : e.status === 'ENDED' ? 'Relist on eBay' : 'Publish to eBay'}</button>`;
+  const s1 = !hasNotes ? '<span style="color:#F2C063">Write the lister notes above first.</span>' : d1 ? 'Title, description, specs and condition written.' : g ? '<span style="color:#F2C063">Notes changed since it was written.</span>' : 'AI writes the title, description and specs from your notes.';
+  const s2 = !d1 ? 'eBay’s required details are checked once step 1 is done.' : !checkFresh ? 'Ask eBay which details this item’s category requires; the Vault fills what it knows.' : missing.length ? `<span style="color:#F2C063">${missing.length} required detail${missing.length === 1 ? '' : 's'} to fill below.</span>` : `All required details filled · ${esc(chk.categoryName || 'category ' + chk.categoryId)}.`;
+  const s3 = live ? `Live as ${esc(e.seller || 'your eBay account')} · ${money(e.price)} × ${e.quantity}${e.updatedAt ? ` · updated ${agoText(e.updatedAt)}` : ''}.` : !EbayAdapter.connected() ? '<span style="color:#F2C063">Connect eBay in Settings first.</span>' : !priced ? '<span style="color:#F2C063">Set a price.</span>' : e.status === 'ENDED' ? `Ended ${agoText(e.endedAt)}${e.endReason ? ` · ${esc(e.endReason)}` : ''}.` : 'Publishes the listing — available to buy on eBay right away.';
+  const field = m => { const v = ((pk.ebayAspects || {})[m.name]) || ''; return `<label class="field" style="margin:0"><span class="sm" style="color:#F2C063">${esc(m.name)} · required</span>${(m.options || []).length
+      ? `<select class="in" data-ebaspect="${esc(m.name)}" data-code="${esc(it.code)}"><option value="">Choose…</option>${m.options.map(o => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`
+      : `<input class="in" data-ebaspect="${esc(m.name)}" data-code="${esc(it.code)}" value="${esc(v)}" placeholder="Enter ${esc(m.name)}">`}</label>`; };
+  const detailsPanel = checkFresh && (missing.length || (chk.filled || []).length) ? `<div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b style="font-size:14px">eBay item details · ${esc(chk.categoryName || '')} <span class="mono sm mut2">${esc(chk.categoryId || '')}</span></b><span class="sm mut2">checked ${agoText(chk.at)}</span></div>
+      ${missing.length ? `<div class="grid g2 stack" style="gap:10px">${missing.map(field).join('')}</div><div class="sm mut2">Fill these, then press <b>Check again</b>. They’re saved on this item.</div>` : ''}
+      ${(chk.filled || []).length ? `<div class="sm mut2" style="line-height:1.7">${chk.filled.map(f => `<span style="display:inline-block;margin:0 10px 0 0"><span style="color:${f.required ? '#5FE6AC' : '#9AA9A2'}">●</span> ${esc(f.name)}: <span style="color:var(--tx)">${esc(f.value)}</span></span>`).join('')}</div>` : ''}
+      ${problems.filter(x => !/^eBay needs/.test(x)).length ? `<div class="notice"><div>${problems.filter(x => !/^eBay needs/.test(x)).map(esc).join('<br>')}</div></div>` : ''}</div>` : '';
+  return `<div style="display:flex;gap:10px;flex-wrap:wrap">${tile(1, d1, 'Write listing', s1, b1)}${tile(2, d2, 'eBay details', s2, b2)}${tile(3, d3, 'Live on eBay', s3, b3)}</div>${detailsPanel}`;
+}
+function routePicker(it, pk) {
+  const r = routeOf(it); const locked = pk.shopifyId || (pk.ebay || {}).status === 'ACTIVE';
+  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div class="sm mut2" style="flex:1;min-width:200px"><b style="color:var(--tx)">Route</b> · ${r === 'ebay' ? 'Straight to eBay — live as soon as it’s published.' : 'To Shopify; send to eBay later through Marketplace Connect if you want.'}</div>
+    <div class="seg">${[['shopify', 'Shopify'], ['ebay', 'eBay direct']].map(([k, l]) => `<button class="${r === k ? 'on' : ''}" data-act="pkRoute" data-code="${esc(it.code)}" data-v="${k}" ${locked && r !== k ? 'title="Already listed on the other route — end it there first"' : ''}>${l}</button>`).join('')}</div></div>`;
+}
 function listingSteps(it, pk) {
   const g = pk.generated; const stale = !g || generatedStale(it, pk);
   const live = pk.shopifyStatus === 'ACTIVE'; const soldOut = pk.shopifyId && !stockOf(listingUnitsOf(it));
@@ -909,7 +945,8 @@ function packetCard(it, pk, photos, up, sh) {
       <div class="fld spanall"><label for="if-packet-description"><span class="li">${ic('book', 14, 1.9)}</span>Lister notes <span class="opt">plain English — not the final description</span></label><textarea class="ta" id="if-packet-description" data-ifield="packet.description" data-code="${esc(it.code)}" rows="4" placeholder="${esc(NOTES_PLACEHOLDER[it.category] || NOTES_PLACEHOLDER.default)}">${esc(ival(it, 'packet.description') || '')}</textarea><span class="sm mut2">Write what you see and tested, like you'd tell a coworker. The Shopify title, description and specs are written from this with the SYG listing rulebook.</span></div>
       ${fIn(it, 'packet.included', 'Included <span class="opt">separate with commas — shown as bullet points</span>', { cls: 'span2', icon: 'box', ph: 'e.g. Console, 1 controller, HDMI cable, power cable' })}${fSel(it, 'packet.returnPolicy', 'Return policy', RETURN_POLICIES, { cls: 'span2', icon: 'sync' })}</div>
     ${qtyRow}
-    ${connected && !parent ? listingSteps(it, pk) : ''}
+    ${!parent && (connected || EbayAdapter.available()) ? routePicker(it, pk) : ''}
+    ${parent ? '' : routeOf(it) === 'ebay' ? ebaySteps(it, pk) : connected ? listingSteps(it, pk) : ''}
     ${generatedPanel(it, pk)}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:16px">
       <span class="sm mut2">${connected ? `Shopify drafts enabled${sh.store ? ': ' + esc(sh.store) : ''} · SKU ${esc(it.code)}` : 'Shopify draft creation is off — export still works. <a href="#/settings">Configure it</a>'}</span>
@@ -1342,6 +1379,33 @@ function pActivity() {
 }
 
 // ── SETTINGS ──────────────────────────────────────────────────────
+function ebaySettingsSection() {
+  if (!EbayAdapter.available()) return '';
+  const eb = S.settings.ebay || {}; const pol = S.ui.ebPolicies; const busy = S.ui.ebSetupBusy; const owner = isAccountOwner();
+  const sel = (key, label, list) => `<label class="field" style="margin:0"><span class="sm mut">${label}</span><select class="in" data-sfield="ebay.${key}" ${owner ? '' : 'disabled'}><option value="">${list ? 'Choose…' : eb[key] ? 'Saved — load policies to change' : 'Load policies first'}</option>${(list || []).map(p => `<option value="${esc(p.id)}" ${String(eb[key]) === p.id ? 'selected' : ''}>${esc(p.name)}${p.returnsAccepted === false ? ' (no returns)' : ''}</option>`).join('')}</select></label>`;
+  const steps = [eb.ruName, eb.connected, eb.fulfillmentPolicyId && eb.paymentPolicyId && eb.returnPolicyId, eb.locationKey];
+  const loc = S.ui.ebLoc || {};
+  return `<section class="card pad" style="display:flex;flex-direction:column;gap:16px;grid-column:1/-1"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="display:flex;align-items:center;gap:12px"><span class="cat" style="width:40px;height:40px;background:#0F2A1F;color:#5FE6AC">${ic('shop', 20)}</span><div><h2>eBay direct</h2><div class="sm mut2" style="margin-top:3px">List straight from the Vault to eBay — no Shopify or Marketplace Connect in between.</div></div></div>
+      ${eb.connected ? `<span class="sm" style="color:#5FE6AC;font-weight:600">● Connected${eb.seller ? ` as ${esc(eb.seller)}` : ''}</span>` : '<span class="sm mut2">Not connected</span>'}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border-radius:12px;background:var(--card2)"><div class="sm mut" style="flex:1;min-width:220px"><b style="color:var(--tx)">Default route for new listings</b> · each packet can still switch.</div>
+      <div class="seg">${[['shopify', 'Shopify'], ['ebay', 'eBay direct']].map(([k, l]) => `<button class="${(S.settings.listingRoute || 'shopify') === k ? 'on' : ''}" data-act="setRoute" data-v="${k}">${l}</button>`).join('')}</div></div>
+    <div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:12px">
+      <b style="font-size:14px">${steps[0] ? '✓' : '1.'} eBay sign-in setup (once)</b>
+      <div class="sm mut2" style="line-height:1.6">In your eBay developer account → <b>Application Keys</b> → your Production keyset → <b>User Tokens</b> → <b>Get a Token from eBay via Your Application</b> → add an eBay Redirect URL. Set <b>Your auth accepted URL</b> to <span class="mono" style="color:var(--tx);user-select:all">${EBAY_CALLBACK}</span> and turn on OAuth. eBay then shows a <b>RuName</b> (looks like <span class="mono">Name-App-PRD-xxxx</span>) — paste it here.</div>
+      <div class="fld"><label for="sf-ebay-ruName">eBay RuName</label><input class="in mono" id="sf-ebay-ruName" data-sfield="ebay.ruName" value="${esc(eb.ruName || '')}" placeholder="Name-AppName-PRD-xxxxxxxx" ${owner ? '' : 'disabled'}></div>
+      <div class="acts">${eb.connected ? `<button class="btn" data-act="ebConnect" ${owner && eb.ruName ? '' : 'disabled'}>${ic('sync', 16)}Reconnect / switch account</button><button class="btn" data-act="ebDisconnect" ${owner ? '' : 'disabled'}>Disconnect</button>` : `<button class="btn pri" data-act="ebConnect" ${owner && eb.ruName ? '' : 'disabled'}>${ic('shop', 16)}Connect eBay</button>`}</div>
+      <div class="sm mut2">Connect opens eBay’s own sign-in. Sign in with the seller account that should own the listings and approve access. ${owner ? '' : 'Only an owner can connect.'}</div>
+    </div>
+    ${eb.connected ? `<div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><b style="font-size:14px">${steps[2] ? '✓' : '2.'} Business policies</b><button class="btn sm" data-act="ebPolicies" ${busy || !owner ? 'disabled' : ''}>${busy ? 'Loading…' : pol ? 'Reload policies' : 'Load policies'}</button></div>
+      <div class="grid g2 stack" style="gap:10px">${sel('fulfillmentPolicyId', 'Shipping policy', pol && pol.fulfillment)}${sel('paymentPolicyId', 'Payment policy', pol && pol.payment)}${sel('returnPolicyId', 'Return policy', pol && pol.returns)}${sel('noReturnPolicyId', 'Return policy for “no returns” items (optional)', pol && pol.returns)}</div>
+      <div class="sm mut2">Buyer-paid shipping comes from your eBay shipping policy (calculated or flat), so choose one that charges the buyer.</div></div>
+    <div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:12px">
+      <b style="font-size:14px">${steps[3] ? '✓' : '3.'} Ship-from location ${eb.location ? `<span class="sm mut2">· ${esc(eb.location)}</span>` : ''}</b>
+      <div class="grid g3 stack" style="gap:10px"><label class="field" style="margin:0"><span class="sm mut">City</span><input class="in" data-ebloc="city" value="${esc(loc.city || '')}"></label><label class="field" style="margin:0"><span class="sm mut">State</span><input class="in" data-ebloc="stateOrProvince" value="${esc(loc.stateOrProvince || '')}" placeholder="NY"></label><label class="field" style="margin:0"><span class="sm mut">ZIP</span><input class="in mono" data-ebloc="postalCode" value="${esc(loc.postalCode || '')}"></label></div>
+      <div class="acts"><button class="btn" data-act="ebLocation" ${busy || !owner ? 'disabled' : ''}>Save location on eBay</button></div></div>` : ''}
+    <div class="sm mut2" style="line-height:1.5">Once connected: packets routed to <b>eBay direct</b> check eBay’s required details for their category and publish straight to eBay. eBay sales are checked every 10 minutes and mark units Sold; quantities stay matched on eBay and Shopify.</div></section>`;
+}
 function pSettings() {
   const st = S.settings; const sh = st.shopify || {};
   const sf = (path, label, o = {}) => `<div class="fld ${o.cls || ''}"><label for="sf-${path.replace(/\./g, '-')}">${label}</label><input class="in ${o.mono ? 'mono' : ''}" id="sf-${path.replace(/\./g, '-')}" data-sfield="${path}" ${o.num ? 'inputmode="decimal"' : ''} value="${esc(path.split('.').reduce((a, k) => (a || {})[k], st) ?? '')}" placeholder="${esc(o.ph || '')}"></div>`;
@@ -1381,6 +1445,7 @@ function pSettings() {
         <div class="notice info" style="flex-direction:column;gap:6px"><b>Today — Export mode</b><span>Every listing packet has <b>Shopify CSV</b> and <b>Photos (.zip)</b> buttons. In any store’s admin: <i>Products → Import</i> the CSV, then drag the photos onto the product. Nothing here is tied to a particular store.</span></div>
         <div class="notice" style="flex-direction:column;gap:6px"><b>Direct draft creation</b><span>Firebase Functions keeps the Shopify client secret off this website. The Vault sends the permanent VR code; the function reads the saved packet, creates or updates the Shopify draft, attaches its photos, sets quantity to 1, and returns the Shopify admin link.</span></div></div></section>
 
+    ${ebaySettingsSection()}
     <section class="card pad" style="display:flex;flex-direction:column;gap:14px"><div style="display:flex;justify-content:space-between;align-items:center"><div><h2>Storage locations</h2><div class="sm mut2" style="margin-top:4px">Bins used by the Master Vault</div></div></div>
       <div style="display:flex;flex-wrap:wrap;gap:8px">${st.bins.map(b => `<span class="bin" style="height:32px;gap:8px">${esc(b)} <span class="mut2">· ${itemsArr().filter(i => i.bin === b && STOCK.includes(i.status)).length}</span><button class="btn ic sm" style="width:22px;height:22px;border:0;background:transparent;box-shadow:none" data-act="binDel" data-v="${esc(b)}" aria-label="Remove ${esc(b)}">${ic('x', 12, 2)}</button></span>`).join('')}</div>
       <div class="acts"><input class="in mono" id="bin-new" placeholder="New bin, e.g. C-03" style="max-width:220px" maxlength="20"><button class="btn" data-act="binAdd">${ic('plus', 16, 2.2)}Add bin</button></div></section>
@@ -1537,6 +1602,20 @@ const ShopifyAdapter = {
   generate(code) { return S.fb.call('shopifyGenerateListing', { code }); },
   connectOrders() { return S.fb.call('shopifyConnectOrders', {}); }
 };
+// eBay direct: the connected seller account lists straight from the Vault (Sell Inventory API).
+const EbayAdapter = {
+  available() { return S.mode === 'firebase' && !!S.fb; },
+  connected() { return !!(S.settings.ebay || {}).connected; },
+  authStart() { return S.fb.call('ebaySellerAuthStart', {}); },
+  disconnect() { return S.fb.call('ebaySellerDisconnect', {}); },
+  setup(data) { return S.fb.call('ebaySellerSetup', data || {}); },
+  details(code) { return S.fb.call('ebayDetails', { code }); },
+  publish(code) { return S.fb.call('ebayPublish', { code }); },
+  end(code) { return S.fb.call('ebayEnd', { code }); }
+};
+const EBAY_CALLBACK = 'https://us-east1-obsidian-vault-38dfd.cloudfunctions.net/ebaySellerAuthCallback';
+// Each packet routes to Shopify (then Marketplace Connect, by hand) or straight to eBay.
+const routeOf = it => ((it.packet || {}).route) || S.settings.listingRoute || 'shopify';
 // After a sale or return in the Vault, make Shopify's quantity match what is left in stock.
 function onShopify(it) { const pk = it.packet || {}; return !!(pk.shopifyId || (it.listedIn && S.items[it.listedIn] && (S.items[it.listedIn].packet || {}).shopifyId)); }
 async function syncShopifyAfter(it, why) {
@@ -1724,14 +1803,16 @@ const ACT = {
     } catch (e) { toast('Couldn’t build the zip in this view.', 'err'); }
   },
   pkGenerate: async el => {
-    const it = S.items[el.dataset.code]; if (!ShopifyAdapter.configured()) return go('#/settings');
+    const it = S.items[el.dataset.code]; if (!(S.mode === 'firebase' && S.fb)) return go('#/settings');
     if (!String((it.packet || {}).description || it.defect || '').trim()) return toast('Write the lister notes first.', 'err');
     S.ui.genBusy = it.code; render(); let g;
     try { g = await ShopifyAdapter.generate(it.code); logAct('LT', 'generated the Shopify listing for', it.code, it.title, g.title); autoStatus(it.code, 'proc', 'started working on'); }
     catch (e) { S.ui.genBusy = ''; render(); return toast((e && e.message) || 'Could not write the listing.', 'err'); }
     S.ui.genBusy = ''; render();
     const fresh = S.items[it.code]; const missing = g.missing && g.missing.length ? ` ${g.missing.length} detail${g.missing.length === 1 ? '' : 's'} to add to your notes.` : '';
-    // Step 2 follows on its own: the written listing goes straight onto the Shopify draft.
+    // Step 2 follows on its own: eBay route → check eBay's details; Shopify route → fill the Shopify draft.
+    if (routeOf(fresh) === 'ebay') { toast('Listing written.' + missing + ' Checking eBay’s required details…'); return ebayCheck(fresh.code); }
+    if (!ShopifyAdapter.configured()) return toast('Listing written.' + missing);
     if (!(packetOf(fresh).price > 0)) return toast('Listing written.' + missing + ' Set a price to send it to Shopify.');
     await pushListing(fresh, { auto: true, note: missing });
   },
@@ -1902,6 +1983,52 @@ const ACT = {
     finally { S.ui.pcBusy = ''; render(); }
   },
   shProvider: async el => { await saveSetting({ shopify: { ...S.settings.shopify, listingProvider: el.dataset.v } }); },
+  pkRoute: async el => {
+    const it = S.items[el.dataset.code]; const pk = it.packet || {}; const to = el.dataset.v;
+    if (to === routeOf(it)) return;
+    if (to === 'ebay' && pk.shopifyStatus === 'ACTIVE') return toast('This item is live on Shopify. Set it back to Draft there (or end it) before routing it to eBay.', 'err');
+    if (to === 'shopify' && (pk.ebay || {}).status === 'ACTIVE') return toast('This item is live on eBay. End the eBay listing before routing it to Shopify.', 'err');
+    await write(() => ref('items/' + it.code).update({ packet: { route: to }, updatedAt: nowISO() }), it.code);
+    logAct('LT', `routed to ${to === 'ebay' ? 'eBay direct' : 'Shopify'}`, it.code, it.title);
+  },
+  ebDetails: el => ebayCheck(el.dataset.code),
+  setRoute: async el => { await saveSetting({ listingRoute: el.dataset.v }); },
+  ebPublish: async el => {
+    const it = S.items[el.dataset.code]; const was = (it.packet || {}).ebay || {};
+    S.ui.ebBusy = it.code; S.ui.ebWhat = 'publish'; render();
+    try { const r = await EbayAdapter.publish(it.code); toast(was.status === 'ACTIVE' ? 'eBay listing updated.' : `Live on eBay: ${money(r.price)} × ${r.quantity}.`); if (r.url && was.status !== 'ACTIVE') { const w = window.open(r.url, '_blank'); if (w) w.opener = null; } }
+    catch (e) { toast((e && e.message) || 'eBay didn’t accept the listing.', 'err'); }
+    finally { S.ui.ebBusy = ''; render(); }
+  },
+  ebEnd: async el => {
+    const it = S.items[el.dataset.code];
+    if (!confirm('End this eBay listing? Buyers can no longer purchase it; you can relist later.')) return;
+    S.ui.ebBusy = it.code; S.ui.ebWhat = 'end'; render();
+    try { await EbayAdapter.end(it.code); toast('eBay listing ended.'); } catch (e) { toast((e && e.message) || 'Couldn’t end the eBay listing.', 'err'); }
+    finally { S.ui.ebBusy = ''; render(); }
+  },
+  ebConnect: async () => {
+    const w = window.open('', '_blank');
+    try { const r = await EbayAdapter.authStart(); if (w) w.location = r.url; else location.href = r.url; }
+    catch (e) { if (w) w.close(); toast((e && e.message) || 'Couldn’t start the eBay sign-in.', 'err'); }
+  },
+  ebDisconnect: async () => {
+    if (!confirm('Disconnect eBay? Live listings stay on eBay, but the Vault stops updating them and booking eBay sales.')) return;
+    try { await EbayAdapter.disconnect(); toast('eBay disconnected.'); } catch (e) { toast((e && e.message) || 'Couldn’t disconnect.', 'err'); }
+  },
+  ebPolicies: async () => {
+    S.ui.ebSetupBusy = true; render();
+    try { S.ui.ebPolicies = await EbayAdapter.setup({ action: 'load' }); toast('eBay policies loaded — pick one of each.'); }
+    catch (e) { toast((e && e.message) || 'Couldn’t load eBay policies.', 'err'); }
+    finally { S.ui.ebSetupBusy = false; render(); }
+  },
+  ebLocation: async () => {
+    const a = S.ui.ebLoc || {};
+    S.ui.ebSetupBusy = true; render();
+    try { await EbayAdapter.setup({ action: 'location', address: a }); toast('Ship-from location saved on eBay.'); }
+    catch (e) { toast((e && e.message) || 'Couldn’t save the location.', 'err'); }
+    finally { S.ui.ebSetupBusy = false; render(); }
+  },
   shipPayer: async el => { await saveSetting({ buyerPaysShipping: el.dataset.v === 'buyer' }); },
   shWear: async el => { await saveSetting({ shopify: { ...S.settings.shopify, standardWear: el.dataset.v === 'on' } }); },
   shMode: async el => { await saveSetting({ shopify: { ...S.settings.shopify, mode: el.dataset.v } }); },
@@ -1941,6 +2068,12 @@ const ACT = {
 };
 // Creates or updates the Shopify draft from the written listing. A tab only opens on a click
 // (browsers block tabs opened after a wait), so the automatic send shows the link instead.
+async function ebayCheck(code) {
+  S.ui.ebBusy = code; S.ui.ebWhat = 'details'; render();
+  try { const r = await EbayAdapter.details(code); toast(r.missing.length ? `eBay needs ${r.missing.length} more detail${r.missing.length === 1 ? '' : 's'} — fill them on the packet.` : r.problems.length ? r.problems[0] : 'All eBay details are filled. Ready to publish.', r.missing.length || r.problems.length ? 'err' : undefined); }
+  catch (e) { toast((e && e.message) || 'Couldn’t check eBay’s details.', 'err'); }
+  finally { S.ui.ebBusy = ''; render(); autoStatus(code, 'proc', 'started working on'); }
+}
 async function pushListing(it, o = {}) {
   const productTab = o.openTab ? window.open('', '_blank') : null; if (productTab) productTab.opener = null;
   S.ui.pushBusy = it.code; render();
@@ -1987,6 +2120,8 @@ document.addEventListener('change', ev => {
   if (el.dataset.ifield) commitItemField(el.dataset.code, el.dataset.ifield, el.value);
   if (el.dataset.cfield) { const c = S.customers[el.dataset.code]; const f = el.dataset.cfield; const v = el.value.trim(); if (c && String(c[f] || '') !== v) write(() => ref('customers/' + c.code).update({ [f]: v, updatedAt: nowISO() })).then(() => logAct('CU', 'edited ' + f + ' of', c.code, c.name, '', [], f === 'notes' ? '' : String(c[f] || '—'), f === 'notes' ? '' : v)).catch(() => {}); }
   if (el.dataset.sfield) { const path = el.dataset.sfield; let v = el.value; if (['feePct', 'shipFlat', 'riskPct', 'autoLock'].includes(path)) v = num(v); if (path.includes('.')) { const [a, b] = path.split('.'); saveSetting({ [a]: { ...S.settings[a], [b]: typeof v === 'string' ? v.trim() : v } }); } else saveSetting({ [path]: v }); }
+  if (el.dataset.ebaspect) { const code = el.dataset.code; const cur = ((S.items[code] || {}).packet || {}).ebayAspects || {}; write(() => ref('items/' + code).update({ packet: { ebayAspects: { ...cur, [el.dataset.ebaspect]: el.value.trim() } }, updatedAt: nowISO() }), code); }
+  if (el.dataset.ebloc) { S.ui.ebLoc = { ...(S.ui.ebLoc || {}), [el.dataset.ebloc]: el.value.trim() }; }
   if (el.dataset.upload) { uploadPhotos(el.dataset.upload, el.files); el.value = ''; }
   if (el.dataset.restore) { const f = el.files[0]; el.value = ''; if (f) restore(f); }
 });
@@ -2005,6 +2140,11 @@ document.addEventListener('drop', ev => { const z = ev.target.closest && ev.targ
 window.addEventListener('pagehide', () => { const a = document.activeElement; if (a && a.dataset && a.dataset.ifield) commitItemField(a.dataset.code, a.dataset.ifield, a.value); });
 
 boot().catch(e => { console.error(e); $('#app').innerHTML = '<div class="skel">The vault could not start. Reload the page.</div>'; });
+// Back from eBay's sign-in (…/TheVault/?ebay=connected#/settings): say how it went, then tidy the address bar.
+(() => { const q = new URLSearchParams(location.search).get('ebay'); if (!q) return;
+  history.replaceState(null, '', location.pathname + location.hash);
+  const msg = { connected: ['eBay connected. Next: load your policies and save your ship-from location below.'], declined: ['eBay sign-in was cancelled.', 'err'], expired: ['That eBay sign-in link expired. Press Connect eBay again.', 'err'], error: ['eBay connect failed — see Settings → System log.', 'err'] }[q];
+  if (msg) setTimeout(() => toast(...msg), 1500); })();
 })();
 </script>
 </body>

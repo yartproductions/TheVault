@@ -1,0 +1,111 @@
+<style>
+#gf-listing .gf-art:before,#gf-listing .gf-art:after{content:"";position:absolute;left:-20%;top:50%;width:140%;height:1px;background:rgba(255,255,255,.07);transform:rotate(24deg)}
+#gf-listing .gf-art:after{transform:rotate(-24deg)}
+#gf-listing .gf-grade-label:after{content:"See item report"}
+#gf-listing .gf-ring:before,#gf-listing .gf-ring:after{content:"+";position:absolute;top:-30px;color:var(--grade,#8fa59a);font-weight:700;opacity:.7}
+#gf-listing .gf-ring:before{left:18px}
+#gf-listing .gf-ring:after{right:18px}
+#gf-listing:has(.gf-report-new){--grade:#69ed22}
+#gf-listing:has(.gf-report-new) .gf-grade-label:after{content:"New"}
+#gf-listing:has(.gf-report-excellent){--grade:#9cf05f}
+#gf-listing:has(.gf-report-excellent) .gf-grade-label:after{content:"Excellent"}
+#gf-listing:has(.gf-report-good){--grade:#3fd6b0}
+#gf-listing:has(.gf-report-good) .gf-grade-label:after{content:"Good"}
+#gf-listing:has(.gf-report-fair){--grade:#f2b544}
+#gf-listing:has(.gf-report-fair) .gf-grade-label:after{content:"Fair"}
+#gf-listing:has(.gf-report-parts){--grade:#ff7c66}
+#gf-listing:has(.gf-report-parts) .gf-grade-label:after{content:"For parts / repair"}
+#gf-listing .gf-report{padding:32px}
+#gf-listing .gf-report .gf-h{margin-bottom:8px}
+#gf-listing .gf-report h3{margin:24px 0 10px;padding-top:20px;border-top:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.72);font-size:12px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase}
+#gf-listing .gf-report p{margin:0 0 12px}
+#gf-listing .gf-report ul{margin:0 0 12px;padding:0;list-style:none}
+#gf-listing .gf-report li{position:relative;margin:0 0 9px;padding-left:22px}
+#gf-listing .gf-report li:before{content:"";position:absolute;left:2px;top:.6em;width:8px;height:8px;background:#69ed22;border-radius:50%}
+#gf-listing .gf-report img{max-width:100%;height:auto;border-radius:8px}
+#gf-listing .gf-report-label{display:inline-block;padding:5px 10px;color:#092117;background:var(--grade,#8fa59a);border-radius:4px;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
+#gf-listing .gf-report table{width:100%!important;border-collapse:collapse!important;background:transparent!important;margin:8px 0 16px!important}
+#gf-listing .gf-report td,#gf-listing .gf-report th{padding:10px 12px!important;background:transparent!important;color:#fff!important;border:0!important;border-bottom:1px solid rgba(255,255,255,.1)!important;font-family:inherit!important;font-size:15px!important;vertical-align:top}
+#gf-listing .gf-report tr{background:transparent!important;background-color:transparent!important}
+#gf-listing .gf-report tr:nth-child(even) td{background:rgba(255,255,255,.03)!important}
+#gf-listing .gf-report td:first-child{width:34%;color:rgba(255,255,255,.72)!important;font-weight:600!important}
+#gf-listing .gf-report td[colspan],#gf-listing .gf-report [style*="1F4E79"],#gf-listing .gf-report [style*="1f4e79"]{padding:20px 0 8px!important;background:transparent!important;color:#69ed22!important;width:auto!important;font-size:12px!important;font-weight:700!important;letter-spacing:1.4px;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,.1)!important}
+#gf-listing .gf-report div[style*="max-width"]{max-width:none!important;font-family:inherit!important}
+@keyframes gf-scan{0%{transform:translateX(-105%)}45%,100%{transform:translateX(360%)}}
+@keyframes gf-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes gf-pulse{0%,100%{box-shadow:0 0 0 6px rgba(255,255,255,.04),0 0 40px -6px var(--grade,#8fa59a)}50%{box-shadow:0 0 0 6px rgba(255,255,255,.04),0 0 18px -10px var(--grade,#8fa59a)}}
+@media(prefers-reduced-motion:reduce){#gf-listing *{animation:none!important}}
+@media(max-width:680px){#gf-listing .gf-top{padding:16px 18px!important}#gf-listing .gf-top span{display:none!important}#gf-listing .gf-card,#gf-listing .gf-foot{margin:14px 12px 0!important}#gf-listing .gf-body,#gf-listing .gf-report{padding:24px 20px!important}#gf-listing .gf-cond{padding:28px 20px 24px!important}#gf-listing .gf-art{min-height:210px!important;padding:24px 16px!important}#gf-listing .gf-photo{min-height:260px!important}#gf-listing .gf-title{font-size:28px!important}#gf-listing .gf-h{font-size:28px!important}#gf-listing .gf-grade-label{font-size:38px!important}#gf-listing .gf-ship{grid-template-columns:1fr!important}#gf-listing .gf-ship div+div{padding-left:0!important;border-left:0!important;border-top:1px solid rgba(255,255,255,.1)!important}#gf-listing .gf-dot b{display:none!important}#gf-listing .gf-gallery{grid-template-columns:repeat(2,1fr)!important;padding:12px!important;gap:10px!important}#gf-listing .gf-gallery img{height:130px!important}}
+</style>
+<div id="gf-listing" style='box-sizing:border-box;margin:0;background:#051510;color:#fff;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:16px;line-height:1.55;text-align:left'>
+<div class="gf-page" style="box-sizing:border-box;max-width:820px;margin:0 auto;padding:0 0 32px">
+<div class="gf-top" style="box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 28px;background:#092117;border-bottom:1px solid rgba(255,255,255,.1)"><div class="gf-brand" style="box-sizing:border-box;font-size:21px;font-weight:700;letter-spacing:-.4px">Gadget <b style="box-sizing:border-box;color:#69ed22;font-weight:700">Flippers</b></div><span style="box-sizing:border-box;font-size:12px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:rgba(255,255,255,.72)">Verified item report</span></div>
+<div class="gf-beam" style="box-sizing:border-box;height:3px;overflow:hidden;background:#123526"><i style="box-sizing:border-box;display:block;width:28%;height:100%;background:#69ed22;animation:gf-scan 6s ease-in-out infinite"></i></div>
+<div class="gf-card" style="box-sizing:border-box;margin:24px 24px 0;overflow:hidden;background:#0e2c20;border:1px solid rgba(255,255,255,.1);border-radius:14px">
+<div class="gf-art gf-photo" style="box-sizing:border-box;position:relative;display:flex;align-items:center;justify-content:center;padding:32px;overflow:hidden;background:#08201a;min-height:340px">{{PHOTO}}</div>
+<div class="gf-body" style="box-sizing:border-box;padding:32px">
+<span class="gf-pill" style="box-sizing:border-box;display:inline-block;padding:5px 10px;color:#092117;background:#69ed22;border-radius:4px;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;line-height:1.3">Buy · Sell · Upgrade</span>
+<h1 class="gf-title" style="box-sizing:border-box;font-family:inherit;color:inherit;margin:18px 0 0;padding:0 0 24px;font-size:36px;font-weight:600;line-height:1.12;letter-spacing:-1px;border-bottom:1px solid rgba(255,255,255,.1)">{{TITLE}}</h1>
+<p class="gf-tagline" style="box-sizing:border-box;font-family:inherit;margin:16px 0 0;color:rgba(255,255,255,.72)">Details that matter. Tech with another chapter. Review the item report below for condition, specifications, included accessories, and any known faults.</p>
+<div class="gf-facts" style="box-sizing:border-box;display:flex;flex-wrap:wrap;gap:18px 32px;margin-top:24px">
+<div class="gf-fact" style="box-sizing:border-box;display:flex;align-items:center;gap:12px;flex:1 1 200px;font-weight:500"><span class="gf-ico" style="box-sizing:border-box;font-size:17px;font-weight:900;line-height:1;display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;width:34px;height:34px;color:#092117;background:#69ed22;border-radius:50%">✓</span>Inspected before listing</div>
+<div class="gf-fact" style="box-sizing:border-box;display:flex;align-items:center;gap:12px;flex:1 1 200px;font-weight:500"><span class="gf-ico" style="box-sizing:border-box;font-size:17px;font-weight:900;line-height:1;display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;width:34px;height:34px;color:#092117;background:#69ed22;border-radius:50%">◆</span>Packed with care</div>
+<div class="gf-fact" style="box-sizing:border-box;display:flex;align-items:center;gap:12px;flex:1 1 200px;font-weight:500"><span class="gf-ico" style="box-sizing:border-box;font-size:17px;font-weight:900;line-height:1;display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;width:34px;height:34px;color:#092117;background:#69ed22;border-radius:50%">↺</span>{{RETURNS_FACT}}</div>
+</div>
+</div>
+</div>
+<div class="gf-card gf-cond" style="box-sizing:border-box;margin:24px 24px 0;overflow:hidden;background:#0e2c20;border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:36px 32px 32px;text-align:center">
+<span class="gf-label" style="box-sizing:border-box;display:block;margin:0 0 14px;color:rgba(255,255,255,.72);font-size:12px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;margin-bottom:6px">Condition rating:</span>
+<h2 class="gf-grade-label" style="box-sizing:border-box;margin:0;font-family:inherit;font-size:48px;font-weight:600;line-height:1.1;letter-spacing:-1.2px;color:#fff"></h2>
+<div aria-hidden="true" class="gf-ring" style="box-sizing:border-box;position:relative;display:flex;align-items:center;justify-content:center;width:150px;height:150px;margin:26px auto 4px;border:11px solid var(--grade,#8fa59a);border-radius:50%;box-shadow:0 0 0 6px rgba(255,255,255,.04),0 0 40px -6px var(--grade,#8fa59a);animation:gf-pulse 3.2s ease-in-out infinite"><span style="box-sizing:border-box;color:var(--grade,#8fa59a);font-size:58px;font-weight:900;line-height:1">✓</span></div>
+<p class="gf-cond-note" style="box-sizing:border-box;font-family:inherit;max-width:520px;margin:18px auto 0;color:rgba(255,255,255,.72);font-size:14px">The report below describes this specific item. The condition category selected on eBay is shown in the listing’s item specifics.</p>
+</div>
+<div class="gf-card gf-report" style="box-sizing:border-box;margin:24px 24px 0;overflow:hidden;background:#0e2c20;border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:32px"><span class="gf-eyebrow" style="box-sizing:border-box;display:block;margin:0 0 12px;color:rgba(255,255,255,.72);font-size:11px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase">Your item, documented</span><h2 class="gf-h" style="box-sizing:border-box;font-family:inherit;color:inherit;font-size:34px;font-weight:600;line-height:1.12;letter-spacing:-.8px;margin:0 0 16px;margin-bottom:8px">Verified Item Report</h2>
+{{REPORT}}
+</div>
+
+  {{GALLERY}}
+  <div class="gf-card" style="box-sizing:border-box;margin:24px 24px 0;overflow:hidden;background:#0e2c20;border:1px solid rgba(255,255,255,.1);border-radius:14px">
+<div class="gf-body gf-copy" style="box-sizing:border-box;padding:32px">
+<span class="gf-eyebrow" style="box-sizing:border-box;display:block;margin:0 0 12px;color:rgba(255,255,255,.72);font-size:11px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase">01 — Our standard</span>
+<h2 class="gf-h" style="box-sizing:border-box;font-family:inherit;color:inherit;font-size:34px;font-weight:600;line-height:1.12;letter-spacing:-.8px;margin:0 0 16px">Clear details. Careful handling.</h2>
+<div class="gf-rule" style="box-sizing:border-box;border-left:3px solid #69ed22;padding-left:18px">
+<p style="box-sizing:border-box;font-family:inherit;margin:0 0 12px;color:rgba(255,255,255,.72)">Know what you’re buying. Check the item report and listing photos for the <b style="box-sizing:border-box;color:#fff;font-weight:600">condition, accessories, and details</b> of your purchase.</p>
+<p style="box-sizing:border-box;font-family:inherit;margin:0 0 12px;color:rgba(255,255,255,.72)">Questions before you buy? Contact <b style="box-sizing:border-box;color:#fff;font-weight:600">Gadget Flippers</b> through eBay messages — we’re happy to help.</p>
+</div>
+</div>
+<div class="gf-art" style="box-sizing:border-box;position:relative;display:flex;align-items:center;justify-content:center;min-height:250px;padding:32px;overflow:hidden;background:#08201a">
+<div class="gf-seal gf-z" style="box-sizing:border-box;position:relative;z-index:1;display:flex;align-items:center;justify-content:center;width:120px;height:120px;color:#092117;background:#69ed22;border:9px solid #1d4a2c;border-radius:28% 28% 45% 45%;box-shadow:0 0 0 2px #2c6a3e,0 0 50px -10px #69ed22;transform:rotate(45deg)"><span style="box-sizing:border-box;display:block;font-size:52px;font-weight:900;line-height:1;transform:rotate(-45deg)">✓</span></div>
+</div>
+</div>
+<div class="gf-card" style="box-sizing:border-box;margin:24px 24px 0;overflow:hidden;background:#0e2c20;border:1px solid rgba(255,255,255,.1);border-radius:14px">
+<div class="gf-art" style="box-sizing:border-box;position:relative;display:flex;align-items:center;justify-content:center;min-height:250px;padding:32px;overflow:hidden;background:#08201a">
+<div aria-hidden="true" class="gf-diagram gf-z" style="box-sizing:border-box;position:relative;z-index:1;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:22px;width:100%;max-width:440px">
+<div class="gf-dots l" style="box-sizing:border-box;display:flex;flex-direction:column;gap:22px;align-items:flex-end"><span class="gf-dot" style="box-sizing:border-box;display:flex;align-items:center;gap:8px;color:rgba(255,255,255,.72);font-size:12px;font-weight:600;letter-spacing:.6px;text-transform:uppercase"><b style="box-sizing:border-box">Power</b><i style="box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;color:#092117;background:#fff;border-radius:50%;font-style:normal;font-size:12px;font-weight:700">1</i></span><span class="gf-dot" style="box-sizing:border-box;display:flex;align-items:center;gap:8px;color:rgba(255,255,255,.72);font-size:12px;font-weight:600;letter-spacing:.6px;text-transform:uppercase"><b style="box-sizing:border-box">Display</b><i style="box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;color:#092117;background:#fff;border-radius:50%;font-style:normal;font-size:12px;font-weight:700">2</i></span><span class="gf-dot" style="box-sizing:border-box;display:flex;align-items:center;gap:8px;color:rgba(255,255,255,.72);font-size:12px;font-weight:600;letter-spacing:.6px;text-transform:uppercase"><b style="box-sizing:border-box">Inputs</b><i style="box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;color:#092117;background:#fff;border-radius:50%;font-style:normal;font-size:12px;font-weight:700">3</i></span></div>
+<div class="gf-phone" style="box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:70px;height:120px;border:4px solid #69ed22;border-radius:14px;box-shadow:0 0 30px -8px #69ed22"><span style="box-sizing:border-box;color:#69ed22;font-size:30px;font-weight:900;line-height:1">✓</span></div>
+<div class="gf-dots r" style="box-sizing:border-box;display:flex;flex-direction:column;gap:22px;align-items:flex-start"><span class="gf-dot" style="box-sizing:border-box;display:flex;align-items:center;gap:8px;color:rgba(255,255,255,.72);font-size:12px;font-weight:600;letter-spacing:.6px;text-transform:uppercase"><i style="box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;color:#092117;background:#fff;border-radius:50%;font-style:normal;font-size:12px;font-weight:700">4</i><b style="box-sizing:border-box">Ports</b></span><span class="gf-dot" style="box-sizing:border-box;display:flex;align-items:center;gap:8px;color:rgba(255,255,255,.72);font-size:12px;font-weight:600;letter-spacing:.6px;text-transform:uppercase"><i style="box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;color:#092117;background:#fff;border-radius:50%;font-style:normal;font-size:12px;font-weight:700">5</i><b style="box-sizing:border-box">Wireless</b></span><span class="gf-dot" style="box-sizing:border-box;display:flex;align-items:center;gap:8px;color:rgba(255,255,255,.72);font-size:12px;font-weight:600;letter-spacing:.6px;text-transform:uppercase"><i style="box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;color:#092117;background:#fff;border-radius:50%;font-style:normal;font-size:12px;font-weight:700">6</i><b style="box-sizing:border-box">Audio</b></span></div>
+</div>
+</div>
+<div class="gf-body gf-copy" style="box-sizing:border-box;padding:32px">
+<span class="gf-eyebrow" style="box-sizing:border-box;display:block;margin:0 0 12px;color:rgba(255,255,255,.72);font-size:11px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase">02 — Item transparency</span>
+<h2 class="gf-h" style="box-sizing:border-box;font-family:inherit;color:inherit;font-size:34px;font-weight:600;line-height:1.12;letter-spacing:-.8px;margin:0 0 16px">Inspected before listing.</h2>
+<p style="box-sizing:border-box;font-family:inherit;margin:0 0 12px;color:rgba(255,255,255,.72)">Inspection results and known faults belong in the item report above. For-parts items may require repair and should be evaluated using their stated limitations.</p>
+<div class="gf-callout" style="box-sizing:border-box;margin-top:18px;padding:16px 20px;background:#08201a;border-left:3px solid #69ed22;border-radius:0 8px 8px 0;font-weight:500">Refer to the report for tests performed, cosmetic wear, battery information where available, and included accessories.</div>
+</div>
+</div>
+<div class="gf-card" style="box-sizing:border-box;margin:24px 24px 0;overflow:hidden;background:#0e2c20;border:1px solid rgba(255,255,255,.1);border-radius:14px">
+<div class="gf-art" style="box-sizing:border-box;position:relative;display:flex;align-items:center;justify-content:center;min-height:250px;padding:32px;overflow:hidden;background:#08201a"><div aria-hidden="true" class="gf-badge gf-z" style="box-sizing:border-box;position:relative;z-index:1;display:flex;align-items:center;justify-content:center;width:150px;height:150px;color:#092117;background:#69ed22;border:10px solid #1d4a2c;border-radius:50%;box-shadow:0 0 0 2px #2c6a3e,0 0 50px -10px #69ed22"><span style="box-sizing:border-box;font-size:62px;font-weight:900;line-height:1">⇄</span></div></div>
+<div class="gf-body gf-copy" style="box-sizing:border-box;padding:32px">
+<span class="gf-eyebrow" style="box-sizing:border-box;display:block;margin:0 0 12px;color:rgba(255,255,255,.72);font-size:11px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase">03 — Purchase details</span>
+<h2 class="gf-h" style="box-sizing:border-box;font-family:inherit;color:inherit;font-size:34px;font-weight:600;line-height:1.12;letter-spacing:-.8px;margin:0 0 16px">Shipping and returns</h2>
+<p style="box-sizing:border-box;font-family:inherit;margin:0 0 12px;color:rgba(255,255,255,.72)"><span class="gf-pill" style="box-sizing:border-box;display:inline-block;padding:5px 10px;color:#092117;background:#69ed22;border-radius:4px;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;line-height:1.3">{{RETURNS_PILL}}</span></p>
+<div class="gf-ship" style="box-sizing:border-box;display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:22px;border-top:2px solid #69ed22">
+<div style="box-sizing:border-box;padding:18px 18px 6px 0"><strong style="box-sizing:border-box;display:block;margin-bottom:8px;font-size:12px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase">Shipping</strong><span style="box-sizing:border-box;color:rgba(255,255,255,.72);font-size:14px;line-height:1.5">Check the shipping section of this listing for cost, handling time, and the delivery estimate for your address.</span></div>
+<div style="box-sizing:border-box;padding:18px 18px 6px 0;padding-left:18px;border-left:1px solid rgba(255,255,255,.1)"><strong style="box-sizing:border-box;display:block;margin-bottom:8px;font-size:12px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase">Delivery</strong><span style="box-sizing:border-box;color:rgba(255,255,255,.72);font-size:14px;line-height:1.5">Ships to eligible addresses shown on the listing. Buyer pays shipping, calculated at checkout.</span></div>
+<div style="box-sizing:border-box;padding:18px 18px 6px 0;padding-left:18px;border-left:1px solid rgba(255,255,255,.1)"><strong style="box-sizing:border-box;display:block;margin-bottom:8px;font-size:12px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase">Returns</strong><span style="box-sizing:border-box;color:rgba(255,255,255,.72);font-size:14px;line-height:1.5">{{RETURNS_TEXT}}</span></div>
+</div><p class="gf-fine" style="box-sizing:border-box;font-family:inherit;font-size:12px;line-height:1.5;margin:0 0 12px;color:rgba(255,255,255,.72)">The shipping, condition, and return fields on eBay govern this purchase. Complete payment through eBay checkout.</p>
+</div>
+</div>
+<div class="gf-foot" style="box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin:24px 24px 0;padding:24px 28px;background:#092117;border:1px solid rgba(255,255,255,.1);border-radius:14px"><strong style="box-sizing:border-box">Gadget <b style="box-sizing:border-box;color:#69ed22">Flippers</b></strong><span style="box-sizing:border-box;color:rgba(255,255,255,.72);font-size:12px;letter-spacing:1px;text-transform:uppercase">Buy · Sell · Upgrade</span></div>
+</div>
+</div>
