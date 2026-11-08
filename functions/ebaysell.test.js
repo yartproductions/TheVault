@@ -46,6 +46,10 @@ test('inventory item and offer bodies', () => {
   assert.deepEqual(item.product.imageUrls, ['https://x/a.jpg']);
   assert.equal(item.availability.shipToLocationAvailability.quantity, 1);
   assert.equal(item.packageWeightAndSize.weight.unit, 'POUND');
+  assert.equal(item.product.brand, undefined);
+  assert.equal(item.product.mpn, undefined);
+  assert.deepEqual(item.product.aspects.MPN, ['ST2000NM0033']);
+  assert.deepEqual(E.inventoryItem({ gen: { ...gen, metafields: { brand: 'Dell' } }, quantity: 1, photos: [], aspects: {} }).product.aspects, { Brand: ['Dell'], MPN: ['Does Not Apply'] });
   const o = E.offer({ sku: 'VR-00042', categoryId: '56083', price: 44.9, quantity: 1, policies: { fulfillment: 'f', payment: 'p', returns: 'r' }, locationKey: 'main', descriptionHtml: '<p>x</p>' });
   assert.equal(o.pricingSummary.price.value, '44.90');
   assert.equal(o.marketplaceId, 'EBAY_US');

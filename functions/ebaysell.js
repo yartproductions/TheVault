@@ -109,9 +109,15 @@ function inventoryItem({ gen, quantity, photos, aspects, packageInfo }) {
   };
   const desc = String(((gen || {}).ebay || {}).ebay_condition_description || '').trim();
   if (desc && condition !== 'NEW') body.conditionDescription = desc.slice(0, 1000);
+  // Brand and MPN go in as item details (aspects) only. Setting product.brand / product.mpn as well makes
+  // eBay check them as a catalog pair and refuse the publish with "Input data for tag <BrandMPN> is invalid".
   const mf = gen.metafields || {};
-  if (mf.brand) body.product.brand = String(mf.brand).slice(0, 65);
-  if (mf.mpn) body.product.mpn = String(mf.mpn).slice(0, 65);
+  const a = body.product.aspects = { ...(aspects || {}) };
+  const has = name => Object.keys(a).some(k => k.toLowerCase() === name);
+  const brand = String(mf.brand || '').trim();
+  const mpn = String(mf.mpn || '').trim();
+  if (!has('brand') && brand) a.Brand = [brand.slice(0, 65)];
+  if (!has('mpn')) a.MPN = [mpn ? mpn.slice(0, 65) : 'Does Not Apply'];
   if (packageInfo && Number(packageInfo.weightLb) > 0) {
     body.packageWeightAndSize = { weight: { value: Number(packageInfo.weightLb), unit: 'POUND' } };
     if (Number(packageInfo.lengthIn) > 0 && Number(packageInfo.widthIn) > 0 && Number(packageInfo.heightIn) > 0)
