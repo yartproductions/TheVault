@@ -1252,6 +1252,67 @@ async function ebaySell(method, apiPath, body) {
   return json;
 }
 
+// eBay can't reliably fetch Firebase Storage links (encoded paths + token query), and its Inventory
+// service answers that with a bare "Core Inventory Service internal error". So every photo is uploaded
+// to eBay Picture Services first (Media API) and the listing uses eBay's own i.ebayimg.com URLs.
+// Uploaded URLs are remembered per photo in packet.ebayPictures so updates don't re-upload.
+const EBAY_MEDIA = 'https://apim.ebay.com/commerce/media/v1_beta/image';
+
+async function ebayMediaResult(response, token) {
+  const text = await response.text();
+  let json = {}; try { json = text ? JSON.parse(text) : {}; } catch (e) {}
+  if (!response.ok) {
+    const errs = (json.errors || []).map(e => e.longMessage || e.message).filter(Boolean);
+    throw new Error(errs.join(' · ') || `HTTP ${response.status}`);
+  }
+  if (json.imageUrl) return json.imageUrl;
+  const loc = response.headers.get('location');
+  if (!loc) throw new Error('eBay returned no picture address');
+  const got = await fetch(loc, { headers: { Authorization: `Bearer ${token}` } });
+  const g = await got.json().catch(() => ({}));
+  if (!got.ok || !g.imageUrl) throw new Error(`couldn't read the uploaded picture (HTTP ${got.status})`);
+  return g.imageUrl;
+}
+
+async function ebayPictureFor(url, token) {
+  // 1) Download it here and upload the bytes (works for any link the Vault can read).
+  try {
+    const src = await fetch(url);
+    if (!src.ok) throw new Error(`photo download failed (HTTP ${src.status})`);
+    const type = (src.headers.get('content-type') || 'image/jpeg').split(';')[0];
+    const ext = (type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+    const form = new FormData();
+    form.append('image', new Blob([await src.arrayBuffer()], { type }), `photo.${ext}`);
+    const r = await fetch(`${EBAY_MEDIA}/create_image_from_file`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form });
+    return await ebayMediaResult(r, token);
+  } catch (fileError) {
+    // 2) Let eBay fetch it itself.
+    try {
+      const r = await fetch(`${EBAY_MEDIA}/create_image_from_url`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ imageUrl: url }) });
+      return await ebayMediaResult(r, token);
+    } catch (urlError) {
+      throw new Error(`${fileError.message}; ${urlError.message}`);
+    }
+  }
+}
+
+async function ebayPictures(itemRef, packet) {
+  const photos = (packet.photos || []).filter(u => /^https:\/\//.test(u)).slice(0, 24);
+  const known = { ...(packet.ebayPictures || {}) };
+  const token = await ebayUserToken();
+  const out = []; const failed = [];
+  for (const url of photos) {
+    if (/^https:\/\/i\.ebayimg\.com\//.test(url)) { out.push(url); continue; }
+    if (known[url]) { out.push(known[url]); continue; }
+    try { known[url] = await ebayPictureFor(url, token); out.push(known[url]); }
+    catch (error) { failed.push(error.message); }
+  }
+  await itemRef.set({ packet: { ebayPictures: known } }, { merge: true });
+  if (!out.length) throw new HttpsError('failed-precondition', `eBay wouldn't take the photos: ${failed[0] || 'no photos'}`);
+  if (failed.length) await writeSyslog('warn', 'ebayPublish', `${failed.length} photo(s) skipped for eBay: ${failed[0]}`, '');
+  return out;
+}
+
 // Settings → Connect eBay: the sign-in link for eBay's own consent page.
 exports.ebaySellerAuthStart = onCall({ secrets: EBAY_SECRETS }, logged('ebaySellerAuthStart', async request => {
   await ownerFor(request);
@@ -1375,9 +1436,23 @@ exports.ebayPublish = onCall({ secrets: EBAY_SECRETS, timeoutSeconds: 120 }, log
   const { units, inStock } = await resolveUnits(sku, packet, item);
   if (!inStock.length) throw new HttpsError('failed-precondition', 'No units in stock for this listing.');
   const policies = { fulfillment: settings.fulfillmentPolicyId, payment: settings.paymentPolicyId, returns: (gen.ebay || {}).ebay_returns_accepted === 'No' && settings.noReturnPolicyId ? settings.noReturnPolicyId : settings.returnPolicyId };
-  const descriptionHtml = ebaysell.descriptionHtml(gen, { photos: packet.photos || [], standardWear: true });
 
-  await ebaySell('PUT', `/sell/inventory/v1/inventory_item/${encodeURIComponent(sku)}`, ebaysell.inventoryItem({ gen, quantity: inStock.length, photos: packet.photos || [], aspects: d.aspects, packageInfo: packet.package || null }));
+  const pictures = await ebayPictures(itemRef, packet);
+  const itemBody = ebaysell.inventoryItem({ gen, quantity: inStock.length, photos: pictures, aspects: d.aspects, packageInfo: packet.package || null });
+  try {
+    await ebaySell('PUT', `/sell/inventory/v1/inventory_item/${encodeURIComponent(sku)}`, itemBody);
+  } catch (error) {
+    // 25001 is eBay's catch-all; it is sometimes momentary, so try once more before giving up.
+    if (!(error.ebayErrors || []).some(e => e.errorId === 25001)) throw error;
+    await new Promise(r => setTimeout(r, 2000));
+    try { await ebaySell('PUT', `/sell/inventory/v1/inventory_item/${encodeURIComponent(sku)}`, itemBody); }
+    catch (again) {
+      const summary = { title: itemBody.product.title, condition: itemBody.condition, aspects: itemBody.product.aspects, pictures: itemBody.product.imageUrls.length, package: itemBody.packageWeightAndSize || null, conditionDescriptionChars: (itemBody.conditionDescription || '').length };
+      await writeSyslog('error', 'ebayPublish', `eBay inventory item refused for ${sku}`, JSON.stringify(summary).slice(0, 3000));
+      throw again;
+    }
+  }
+  const descriptionHtml = ebaysell.descriptionHtml(gen, { photos: pictures, standardWear: true });
   const offerBody = ebaysell.offer({ sku, categoryId: d.category.id, price, quantity: inStock.length, policies, locationKey: settings.locationKey, descriptionHtml });
   let offerId = (packet.ebay || {}).offerId || '';
   if (!offerId) {
