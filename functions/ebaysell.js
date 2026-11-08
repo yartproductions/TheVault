@@ -109,15 +109,21 @@ function inventoryItem({ gen, quantity, photos, aspects, packageInfo }) {
   };
   const desc = String(((gen || {}).ebay || {}).ebay_condition_description || '').trim();
   if (desc && condition !== 'NEW') body.conditionDescription = desc.slice(0, 1000);
-  // Brand and MPN go in as item details (aspects) only. Setting product.brand / product.mpn as well makes
-  // eBay check them as a catalog pair and refuse the publish with "Input data for tag <BrandMPN> is invalid".
+  // Brand and MPN always travel as a complete pair. eBay files product.brand/product.mpn under its
+  // <BrandMPN> tag and refuses the publish ("Input data for tag <BrandMPN> is invalid or missing") when one
+  // half is blank, so MPN falls back to "Does Not Apply" and the item details carry the same values.
   const mf = gen.metafields || {};
   const a = body.product.aspects = { ...(aspects || {}) };
-  const has = name => Object.keys(a).some(k => k.toLowerCase() === name);
-  const brand = String(mf.brand || '').trim();
-  const mpn = String(mf.mpn || '').trim();
-  if (!has('brand') && brand) a.Brand = [brand.slice(0, 65)];
-  if (!has('mpn')) a.MPN = [mpn ? mpn.slice(0, 65) : 'Does Not Apply'];
+  const key = name => Object.keys(a).find(k => k.toLowerCase() === name);
+  const first = name => { const k = key(name); return k ? String((a[k] || [])[0] || '').trim() : ''; };
+  const brand = (first('brand') || String(mf.brand || '').trim()).slice(0, 65);
+  const mpn = (first('mpn') || String(mf.mpn || '').trim() || 'Does Not Apply').slice(0, 65);
+  if (brand) {
+    a[key('brand') || 'Brand'] = [brand];
+    a[key('mpn') || 'MPN'] = [mpn];
+    body.product.brand = brand;
+    body.product.mpn = mpn;
+  }
   if (packageInfo && Number(packageInfo.weightLb) > 0) {
     body.packageWeightAndSize = { weight: { value: Number(packageInfo.weightLb), unit: 'POUND' } };
     if (Number(packageInfo.lengthIn) > 0 && Number(packageInfo.widthIn) > 0 && Number(packageInfo.heightIn) > 0)

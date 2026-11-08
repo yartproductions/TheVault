@@ -1463,7 +1463,26 @@ exports.ebayPublish = onCall({ secrets: EBAY_SECRETS, timeoutSeconds: 120 }, log
   else offerId = (await ebaySell('POST', '/sell/inventory/v1/offer', offerBody)).offerId;
   let listingId = (packet.ebay || {}).listingId || '';
   const wasLive = (packet.ebay || {}).status === 'ACTIVE' && listingId;
-  if (!wasLive) listingId = (await ebaySell('POST', `/sell/inventory/v1/offer/${offerId}/publish`, {})).listingId || listingId;
+  if (!wasLive) {
+    const publish = async id => (await ebaySell('POST', `/sell/inventory/v1/offer/${id}/publish`, {})).listingId || listingId;
+    try { listingId = await publish(offerId); }
+    catch (error) {
+      // An item first saved with half a Brand/MPN pair can keep it on eBay's side; start that SKU over once.
+      if (!/BrandMPN/i.test(error.message)) throw error;
+      const itemPath = `/sell/inventory/v1/inventory_item/${encodeURIComponent(sku)}`;
+      try {
+        await ebaySell('DELETE', itemPath).catch(e => { if (e.status !== 404) throw e; });
+        await ebaySell('PUT', itemPath, itemBody);
+        offerId = (await ebaySell('POST', '/sell/inventory/v1/offer', offerBody)).offerId;
+        listingId = await publish(offerId);
+      } catch (again) {
+        const p = itemBody.product;
+        await writeSyslog('error', 'ebayPublish', `eBay publish refused for ${sku}`, JSON.stringify({ category: d.category, brand: p.brand || null, mpn: p.mpn || null, aspects: p.aspects, condition: itemBody.condition, error: again.message }).slice(0, 3000));
+        await itemRef.set({ packet: { ebay: { ...(packet.ebay || {}), offerId, status: 'UNPUBLISHED' } } }, { merge: true });
+        throw again;
+      }
+    }
+  }
 
   const now = new Date().toISOString();
   const ebay = { offerId, listingId, url: ebaysell.listingUrl(ebayEnv(), listingId), status: 'ACTIVE', categoryId: d.category.id, categoryName: d.category.name, quantity: inStock.length, price, publishedAt: (packet.ebay || {}).publishedAt || now, updatedAt: now, seller: settings.seller || '' };
