@@ -62,6 +62,8 @@ html,*{scrollbar-width:thin;scrollbar-color:#2A3A33 transparent}
 .cols{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
 .col-main{flex:999 1 520px;min-width:0;display:flex;flex-direction:column;gap:20px}
 .col-side{flex:1 1 320px;min-width:0;display:flex;flex-direction:column;gap:20px}
+.mk-cols{flex-wrap:nowrap}.mk-side{flex:0 0 380px;position:sticky;top:20px;max-height:calc(100vh - 40px);overflow-y:auto;border-radius:16px}
+@media (max-width:1280px){.mk-cols{flex-wrap:wrap}.mk-side{flex:1 1 100%;order:-1;position:static;max-height:none;overflow:visible}}
 .kpi{padding:20px;display:flex;flex-direction:column;gap:12px}
 .kpi .v{font-size:32px;font-weight:500;letter-spacing:-1px}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 14px;border-radius:10px;font:500 13px 'Inter Tight',sans-serif;border:1px solid var(--line2);background:#131917;color:var(--tx2);cursor:pointer;box-shadow:inset 0 1px 0 #ffffff0a;white-space:nowrap;transition:background .15s,filter .15s,transform .1s}
@@ -1258,7 +1260,7 @@ function pMarket() {
       </div></section>`;
   }).join('');
 
-  return head('Live eBay prices and how fast models sell', 'Market', acts) + `
+  return head('Live eBay prices and how fast models sell', 'Market', acts) + `<div class="cols mk-cols"><div class="col-main">
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px">
       <div class="glow" style="padding:16px;display:flex;flex-direction:column;gap:4px;grid-column:span 2;min-width:0"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span class="sm" style="color:#9EE7BC">Total suggested value of your stock</span>${srcTag('est')}</div>
         <div style="display:flex;gap:18px;align-items:baseline;flex-wrap:wrap"><span><span class="mono" style="font-size:30px;color:#5FE6AC">${money0(tot.fast)}</span> <span class="sm mut">at fast prices</span></span><span><span class="mono" style="font-size:20px;color:#8EC3FF">${money0(tot.max)}</span> <span class="sm mut">at max</span></span></div>
@@ -1267,7 +1269,6 @@ function pMarket() {
       <div class="card pad-s"><div class="sm mut2">Hot right now</div><div class="mono" style="font-size:26px;margin-top:4px">${hot} <span class="sm mut2" style="font-family:inherit">of ${docs.length} models</span></div><div class="sm mut2">under 2 weeks of supply</div></div>
     </div>
     ${legend}
-    ${lookupPanel(M)}
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <div style="position:relative;flex:1 1 320px"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#7D8B85;display:flex">${ic('search', 16)}</span><input class="in" id="mk-q" type="search" data-bind="ui.market.q" value="${esc(M.q || '')}" placeholder="Search models — name, brand, part number, VR code…" aria-label="Search market models" style="width:100%;padding-left:36px"></div>
       ${terms.length ? `<span class="sm mut2">${shown.length} of ${docs.length} model${docs.length === 1 ? '' : 's'}</span><button class="btn sm" data-act="mkClearQ">Clear</button>` : ''}</div>
@@ -1276,7 +1277,8 @@ function pMarket() {
       <div class="acts" style="align-items:stretch;flex:1 1 420px;justify-content:flex-end"><input class="in" id="mk-title" data-bind="ui.market.title" value="${esc(M.title)}" placeholder="Watch another model, e.g. Apple iPhone 15 Pro 256GB" style="flex:1 1 260px;max-width:420px">
         <div class="seg">${['Good', 'For Parts'].map(c => `<button class="${M.condition === c ? 'on' : ''}" data-act="mkCond" data-v="${c}">${c === 'Good' ? 'Used' : 'Parts'}</button>`).join('')}</div>
         <button class="btn" data-act="mkAdd" ${M.busy ? 'disabled' : ''}>${ic('plus', 16, 2.2)}${M.busy === 'add' ? 'Adding…' : 'Watch'}</button></div></div>
-    ${cards || (terms.length ? emptyState(`No models match “${esc(M.q)}”. Try fewer words, or watch it as a new model above.`) : emptyState('No models yet. Press Refresh now to build the list from your stock, or watch a model above.'))}`;
+    ${cards || (terms.length ? emptyState(`No models match “${esc(M.q)}”. Try fewer words, or watch it as a new model above.`) : emptyState('No models yet. Press Refresh now to build the list from your stock, or watch a model above.'))}</div>
+    <aside class="col-side mk-side">${lookupPanel(M)}</aside></div>`;
 }
 // Market → Price lookup: price anything on eBay right now, without watching it.
 function lookupPanel(M) {
@@ -1294,21 +1296,21 @@ function lookupPanel(M) {
           <span style="font-size:22px;font-weight:700">Should sell for about <span class="mono" style="color:#5FE6AC">${money0(fast)}</span>${fair && Math.round(fair) > Math.round(fast) ? ` – <span class="mono" style="color:#8EC3FF">${money0(fair)}</span>` : ''}</span>
           <span class="sm mut">Price it at <b>${money0(fast)}</b> to sell quickly${fair && Math.round(fair) > Math.round(fast) ? `, or <b>${money0(fair)}</b> if you can wait` : ''}. Buyer pays shipping on top.</span></div>
         <span class="acts" style="gap:8px"><a class="btn sm" href="${soldUrl(r.query)}" target="_blank" rel="noopener">See what actually sold ↗</a>${r.condition !== 'new' ? `<button class="btn sm" data-act="mkLookupWatch" ${M.busy ? 'disabled' : ''} title="Keep tracking this model's price over time">${ic('plus', 14, 2.2)}Track this</button>` : ''}</span></div>
-      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
         ${tile('Quick sale', fast, 'Cheaper than most sellers, so it should go first.', '#5FE6AC', true)}
         ${tile('Fair price', fair, 'What most sellers are asking. Sells, but slower.', '#8EC3FF')}
         ${tile('Top price', st.p75, 'Only if yours is in great shape — expect a long wait.')}
         ${tile('Cheapest one listed', st.low, 'Usually a worse one: damaged, missing parts, or a rush sale.')}</div>
-      <div class="grid g2 stack" style="gap:16px">
+      <div style="display:flex;flex-direction:column;gap:14px">
         <div style="min-width:0"><div class="sm mut2" style="margin-bottom:2px">Cheapest ones for sale now — your real competition</div>${(r.cheapest || []).map(row).join('')}</div>
         <div style="min-width:0"><div class="sm mut2" style="margin-bottom:2px">What most sellers are asking</div>${(r.typical || []).map(row).join('')}</div></div>
       <div class="sm mut2" style="line-height:1.5">Based on ${st.n} similar ${condLabel[r.condition].toLowerCase()} listing${st.n === 1 ? '' : 's'} on eBay ${Date.now() - Date.parse(r.at) < 60000 ? 'right now' : agoText(r.at)}${r.category ? ` (${esc(r.category.name)})` : ''}${r.junk ? `, ignoring ${r.junk} that weren't the same thing` : ''}. These are <b>asking prices</b> with shipping included, so items often sell for a bit less — tap <b>See what actually sold</b> to double-check.</div>`;
   return `<section class="card pad" style="display:flex;flex-direction:column;gap:12px">
-    <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><h2>What can I sell it for?</h2><span class="sm mut2">Look up any item on eBay — nothing gets saved</span></div>
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><h2>What can I sell it for?</h2><span class="sm mut2">Look up any item on eBay</span></div>
     <div class="acts" style="align-items:stretch;gap:10px">
-      <div style="position:relative;flex:1 1 320px"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#7D8B85;display:flex">${ic('search', 16)}</span><input class="in" id="mk-lk" type="search" data-bind="ui.market.lk.q" data-enter="mkLookup" value="${esc(L.q)}" placeholder="Model or part number, e.g. ST2000NM0033 · RTX 3080 · MacBook Pro M1 16GB" aria-label="Item to price" style="width:100%;padding-left:36px"></div>
+      <div style="position:relative;flex:1 1 100%"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#7D8B85;display:flex">${ic('search', 16)}</span><input class="in" id="mk-lk" type="search" data-bind="ui.market.lk.q" data-enter="mkLookup" value="${esc(L.q)}" placeholder="Model or part number, e.g. RTX 3080" aria-label="Item to price" style="width:100%;padding-left:36px"></div>
       <div class="seg" aria-label="Condition">${[['new', 'New'], ['used', 'Used'], ['parts', 'Parts']].map(([k, l]) => `<button class="${L.cond === k ? 'on' : ''}" data-act="mkLookupCond" data-v="${k}">${l}</button>`).join('')}</div>
-      <button class="btn pri" data-act="mkLookup" ${L.busy ? 'disabled' : ''}>${ic('search', 16)}${L.busy ? 'Checking eBay…' : 'Look up'}</button></div>
+      <button class="btn pri" data-act="mkLookup" ${L.busy ? 'disabled' : ''} style="flex:1;justify-content:center">${ic('search', 16)}${L.busy ? 'Checking eBay…' : 'Look up'}</button></div>
     ${result}</section>`;
 }
 function marketBox(it) {
