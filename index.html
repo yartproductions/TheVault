@@ -1259,7 +1259,6 @@ function pMarket() {
   }).join('');
 
   return head('Live eBay prices and how fast models sell', 'Market', acts) + `
-    ${lookupPanel(M)}
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px">
       <div class="glow" style="padding:16px;display:flex;flex-direction:column;gap:4px;grid-column:span 2;min-width:0"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span class="sm" style="color:#9EE7BC">Total suggested value of your stock</span>${srcTag('est')}</div>
         <div style="display:flex;gap:18px;align-items:baseline;flex-wrap:wrap"><span><span class="mono" style="font-size:30px;color:#5FE6AC">${money0(tot.fast)}</span> <span class="sm mut">at fast prices</span></span><span><span class="mono" style="font-size:20px;color:#8EC3FF">${money0(tot.max)}</span> <span class="sm mut">at max</span></span></div>
@@ -1268,6 +1267,7 @@ function pMarket() {
       <div class="card pad-s"><div class="sm mut2">Hot right now</div><div class="mono" style="font-size:26px;margin-top:4px">${hot} <span class="sm mut2" style="font-family:inherit">of ${docs.length} models</span></div><div class="sm mut2">under 2 weeks of supply</div></div>
     </div>
     ${legend}
+    ${lookupPanel(M)}
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <div style="position:relative;flex:1 1 320px"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#7D8B85;display:flex">${ic('search', 16)}</span><input class="in" id="mk-q" type="search" data-bind="ui.market.q" value="${esc(M.q || '')}" placeholder="Search models — name, brand, part number, VR code…" aria-label="Search market models" style="width:100%;padding-left:36px"></div>
       ${terms.length ? `<span class="sm mut2">${shown.length} of ${docs.length} model${docs.length === 1 ? '' : 's'}</span><button class="btn sm" data-act="mkClearQ">Clear</button>` : ''}</div>
@@ -1283,21 +1283,28 @@ function lookupPanel(M) {
   const L = M.lk || (M.lk = { q: '', cond: 'used', busy: false, res: null });
   const r = L.res; const st = (r && r.stats) || {};
   const soldUrl = q => `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(q)}&LH_Sold=1&LH_Complete=1${r && r.condition === 'parts' ? '&LH_ItemCondition=7000' : r && r.condition === 'new' ? '&LH_ItemCondition=1000' : r ? '&LH_ItemCondition=3000' : ''}`;
-  const tile = (label, v, sub, color) => `<div class="card pad-s" style="background:var(--card2);display:flex;flex-direction:column;gap:2px;min-width:0"><span class="sm mut2">${label}</span><span class="mono" style="font-size:22px;color:${color || 'var(--tx)'}">${v != null ? money0(v) : '—'}</span><span class="sm mut2">${sub}</span></div>`;
-  const row = l => `<a href="${esc(l.url)}" target="_blank" rel="noopener" style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--line);text-decoration:none;color:var(--tx)"><span class="sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${esc(l.title)}${l.lot > 1 ? ` <span class="mut2">· lot of ${l.lot}</span>` : ''}</span><span class="mono sm" style="flex:none">${money(l.price)}${l.lot > 1 ? '<span class="mut2">/ea</span>' : ''} ↗</span></a>`;
+  const tile = (label, v, sub, color, main) => `<div class="card pad-s" style="background:${main ? '#0F2A1F' : 'var(--card2)'};border:1px solid ${main ? '#3DDC97' : 'var(--line)'};display:flex;flex-direction:column;gap:4px;min-width:0"><span class="sm" style="color:${color || 'var(--tx)'};font-weight:600">${label}</span><span class="mono" style="font-size:24px;color:${color || 'var(--tx)'}">${v != null ? money0(v) : '—'}</span><span class="sm mut2" style="line-height:1.4">${sub}</span></div>`;
+  const row = l => `<a href="${esc(l.url)}" target="_blank" rel="noopener" style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--line);text-decoration:none;color:var(--tx)"><span class="sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${esc(l.title)}${l.lot > 1 ? ` <span class="mut2">· lot of ${l.lot}</span>` : ''}</span><span class="mono sm" style="flex:none">${money(l.price)}${l.lot > 1 ? '<span class="mut2"> each</span>' : ''} ↗</span></a>`;
   const condLabel = { new: 'New', used: 'Used', parts: 'For parts' };
+  const fast = st.p25; const fair = st.median;
   const result = !r ? '' : !st.n
-    ? `<div class="notice"><div>No ${condLabel[r.condition] === 'For parts' ? 'for-parts' : condLabel[r.condition].toLowerCase()} listings on eBay for “${esc(r.query)}”${r.category ? ` in ${esc(r.category.name)}` : ''}. Try fewer words, a part number, or another condition. <a href="${soldUrl(r.query)}" target="_blank" rel="noopener">Check sold listings on eBay ↗</a></div></div>`
-    : `<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline"><span class="sm mut2"><b style="color:var(--tx)">${esc(r.query)}</b> · ${condLabel[r.condition]}${r.category ? ` · ${esc(r.category.name)}` : ''} · ${st.n} of ${r.total.toLocaleString('en-US')} active listing${r.total === 1 ? '' : 's'} priced${r.junk ? ` · ${r.junk} accessories/off-topic skipped` : ''}</span>
-        <span class="acts" style="gap:8px"><a class="btn sm" href="${soldUrl(r.query)}" target="_blank" rel="noopener">Sold prices on eBay ↗</a>${r.condition !== 'new' ? `<button class="btn sm" data-act="mkLookupWatch" ${M.busy ? 'disabled' : ''}>${ic('plus', 14, 2.2)}Watch this</button>` : ''}</span></div>
-      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
-        ${tile('Lowest', st.low, 'cheapest listing')}${tile('Sell fast', st.p25, '25% of listings are cheaper', '#5FE6AC')}${tile('Typical', st.median, 'middle of the market', '#8EC3FF')}${tile('High end', st.p75, '75% are cheaper')}</div>
+    ? `<div class="notice"><div>Nobody on eBay is selling “${esc(r.query)}” as <b>${condLabel[r.condition].toLowerCase()}</b> right now. Try fewer words, the part number, or a different condition. <a href="${soldUrl(r.query)}" target="_blank" rel="noopener">See what actually sold ↗</a></div></div>`
+    : `<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <div style="display:flex;flex-direction:column;gap:4px"><span class="sm mut2">${esc(r.query)} · ${condLabel[r.condition]}</span>
+          <span style="font-size:22px;font-weight:700">Should sell for about <span class="mono" style="color:#5FE6AC">${money0(fast)}</span>${fair && Math.round(fair) > Math.round(fast) ? ` – <span class="mono" style="color:#8EC3FF">${money0(fair)}</span>` : ''}</span>
+          <span class="sm mut">Price it at <b>${money0(fast)}</b> to sell quickly${fair && Math.round(fair) > Math.round(fast) ? `, or <b>${money0(fair)}</b> if you can wait` : ''}. Buyer pays shipping on top.</span></div>
+        <span class="acts" style="gap:8px"><a class="btn sm" href="${soldUrl(r.query)}" target="_blank" rel="noopener">See what actually sold ↗</a>${r.condition !== 'new' ? `<button class="btn sm" data-act="mkLookupWatch" ${M.busy ? 'disabled' : ''} title="Keep tracking this model's price over time">${ic('plus', 14, 2.2)}Track this</button>` : ''}</span></div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+        ${tile('Quick sale', fast, 'Cheaper than most sellers, so it should go first.', '#5FE6AC', true)}
+        ${tile('Fair price', fair, 'What most sellers are asking. Sells, but slower.', '#8EC3FF')}
+        ${tile('Top price', st.p75, 'Only if yours is in great shape — expect a long wait.')}
+        ${tile('Cheapest one listed', st.low, 'Usually a worse one: damaged, missing parts, or a rush sale.')}</div>
       <div class="grid g2 stack" style="gap:16px">
-        <div><div class="sm mut2" style="margin-bottom:2px">Cheapest right now</div>${(r.cheapest || []).map(row).join('')}</div>
-        <div><div class="sm mut2" style="margin-bottom:2px">Typical listings</div>${(r.typical || []).map(row).join('')}</div></div>
-      <div class="sm mut2">Asking prices on live eBay listings, item + shipping, checked ${Date.now() - Date.parse(r.at) < 60000 ? 'just now' : agoText(r.at)}. Sold prices are usually a little lower — compare with the sold link above.</div>`;
+        <div style="min-width:0"><div class="sm mut2" style="margin-bottom:2px">Cheapest ones for sale now — your real competition</div>${(r.cheapest || []).map(row).join('')}</div>
+        <div style="min-width:0"><div class="sm mut2" style="margin-bottom:2px">What most sellers are asking</div>${(r.typical || []).map(row).join('')}</div></div>
+      <div class="sm mut2" style="line-height:1.5">Based on ${st.n} similar ${condLabel[r.condition].toLowerCase()} listing${st.n === 1 ? '' : 's'} on eBay ${Date.now() - Date.parse(r.at) < 60000 ? 'right now' : agoText(r.at)}${r.category ? ` (${esc(r.category.name)})` : ''}${r.junk ? `, ignoring ${r.junk} that weren't the same thing` : ''}. These are <b>asking prices</b> with shipping included, so items often sell for a bit less — tap <b>See what actually sold</b> to double-check.</div>`;
   return `<section class="card pad" style="display:flex;flex-direction:column;gap:12px">
-    <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><h2>Price lookup</h2><span class="sm mut2">Price anything on eBay — nothing is saved or watched</span></div>
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><h2>What can I sell it for?</h2><span class="sm mut2">Look up any item on eBay — nothing gets saved</span></div>
     <div class="acts" style="align-items:stretch;gap:10px">
       <div style="position:relative;flex:1 1 320px"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#7D8B85;display:flex">${ic('search', 16)}</span><input class="in" id="mk-lk" type="search" data-bind="ui.market.lk.q" data-enter="mkLookup" value="${esc(L.q)}" placeholder="Model or part number, e.g. ST2000NM0033 · RTX 3080 · MacBook Pro M1 16GB" aria-label="Item to price" style="width:100%;padding-left:36px"></div>
       <div class="seg" aria-label="Condition">${[['new', 'New'], ['used', 'Used'], ['parts', 'Parts']].map(([k, l]) => `<button class="${L.cond === k ? 'on' : ''}" data-act="mkLookupCond" data-v="${k}">${l}</button>`).join('')}</div>
@@ -1988,7 +1995,7 @@ const ACT = {
   mkLookupWatch: async () => {
     const M = S.ui.market; const r = M.lk && M.lk.res; if (!r) return;
     M.busy = 'add'; render();
-    try { await S.fb.call('ebayMarketWatch', { action: 'add', title: r.query, condition: r.condition === 'parts' ? 'For Parts' : 'Good' }); toast('Watching it now — it will show up in the list below.'); }
+    try { await S.fb.call('ebayMarketWatch', { action: 'add', title: r.query, condition: r.condition === 'parts' ? 'For Parts' : 'Good' }); toast('Tracking it now — it will show up in the list below.'); }
     catch (e) { toast((e && e.message) || 'Could not watch that.', 'err'); }
     finally { M.busy = ''; render(); }
   },
