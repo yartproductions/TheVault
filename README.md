@@ -183,3 +183,16 @@ The numbers come from shared counters, so two devices never create the same code
 - **Backups:** download one from Settings every week.
 - **Free plan:** about 50,000 reads and 20,000 writes per day, which is far more than a two-person shop uses.
 - **List size:** each list loads up to 1,000 records live. Past that, archive sold items by year and keep the backups.
+
+## Vault Pricer (standalone price checker)
+
+`pricer.html` is a separate one-page price checker. Open it at
+`https://yartproductions.github.io/TheVault/pricer.html` (or run it locally with
+`python3 -m http.server` in this folder and open `http://localhost:8000/pricer.html`).
+
+- Sign in with your Vault account; prices come from the Vault backend's `ebayMarketLookup`
+  function, so the eBay keys stay on the server.
+- **One item:** what it should sell for, the quick-sale and fair prices, the cheapest competition.
+- **A list of items:** paste up to 50 models or part numbers, get a table, download it as CSV.
+- **What would I make?:** what you keep after eBay's fee and your label, profit at your cost,
+  and the most to pay for a profit you choose. These settings stay in that browser.

@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vault Pricer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0B0E0D;--card:#121816;--card2:#161E1B;--line:#22302B;--tx:#E8F0EC;--mut:#A5B3AD;--mut2:#7D8B85;--grn:#5FE6AC;--blu:#8EC3FF;--yel:#F2C063;--red:#FF8A8A}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 Inter,system-ui,-apple-system,sans-serif}
+body{background-image:radial-gradient(#ffffff08 1px,transparent 1px);background-size:22px 22px;min-height:100vh}
+a{color:var(--grn)}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 20px 60px;display:flex;flex-direction:column;gap:20px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+h1{margin:0;font-size:26px;letter-spacing:-.5px}
+h2{margin:0;font-size:17px}
+.sm{font-size:13px}.mut{color:var(--mut)}.mut2{color:var(--mut2)}.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.in{background:#0E1412;border:1px solid var(--line);border-radius:10px;color:var(--tx);font:inherit;padding:11px 12px;width:100%;min-width:0}
+.in:focus{outline:2px solid #3DDC9766;border-color:#3DDC97}
+textarea.in{min-height:150px;resize:vertical;font-family:'JetBrains Mono',monospace;font-size:13px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);background:var(--card2);color:var(--tx);border-radius:10px;padding:10px 14px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn:hover{border-color:#3A4B44}.btn:disabled{opacity:.55;cursor:default}
+.btn.pri{background:linear-gradient(180deg,#5FE6AC,#34C98A);color:#05140D;border-color:transparent}
+.btn.s{padding:7px 11px;font-size:13px}
+.seg{display:inline-flex;background:#0E1412;border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
+.seg button{border:0;background:transparent;color:var(--mut);font:inherit;font-size:14px;padding:7px 12px;border-radius:8px;cursor:pointer}
+.seg button.on{background:#1F2A26;color:var(--tx);box-shadow:inset 0 0 0 1px #2E3E38}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:20px;align-items:start}
+.side{display:flex;flex-direction:column;gap:20px;position:sticky;top:20px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.tile{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:3px}
+.tile.main{background:#0F2A1F;border-color:#3DDC97}
+.tile .v{font-family:'JetBrains Mono',monospace;font-size:24px}
+.lst a{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--line);text-decoration:none;color:var(--tx)}
+.lst a span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.notice{background:#2A2210;border:1px solid #5A4720;color:#F5DFA8;border-radius:12px;padding:12px 14px;font-size:14px}
+.err{background:#2A1414;border-color:#5A2626;color:#FFC9C9}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--line)}
+.kv:first-child{border-top:0}
+label.f{display:flex;flex-direction:column;gap:4px;flex:1 1 90px;min-width:0}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:9px 8px;border-top:1px solid var(--line);vertical-align:top}
+th{color:var(--mut2);font-weight:500;font-size:12px;border-top:0}
+td.n,th.n{text-align:right;font-family:'JetBrains Mono',monospace;white-space:nowrap}
+.tabs{display:flex;gap:6px}
+.hist button{all:unset;cursor:pointer;display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line);width:100%}
+.hist button:first-child{border-top:0}
+.hist button:hover span:first-child{color:var(--grn)}
+.spin{width:14px;height:14px;border:2px solid #05140D55;border-top-color:#05140D;border-radius:50%;animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (max-width:900px){.layout{grid-template-columns:1fr}.side{position:static}}
+@media (max-width:480px){.wrap{padding:20px 16px 48px}.tiles{grid-template-columns:1fr 1fr}.tile .v{font-size:20px}}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><div class="mut">Loading…</div></div>
+<script type="module">
+// Vault Pricer — a standalone price checker. It signs in with your Vault account and asks the Vault's
+// own backend (the ebayMarketLookup function) for live eBay prices, so the eBay keys never leave the server.
+const FIREBASE = {
+    apiKey: "AIzaSyAAyGyClAYviFr0LgzdXBqna1LpPH57G-M",
+    authDomain: "obsidian-vault-38dfd.firebaseapp.com",
+    projectId: "obsidian-vault-38dfd",
+    storageBucket: "obsidian-vault-38dfd.firebasestorage.app",
+    messagingSenderId: "1096414434158",
+    appId: "1:1096414434158:web:3d87a66e0fc893d5f3a77f",
+    measurementId: "G-7PKW4DLN9T"
+  };
+const REGION = 'us-east1';
+const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
+
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money = v => v == null || isNaN(v) ? '—' : '$' + Number(v).toFixed(2);
+const money0 = v => v == null || isNaN(v) ? '—' : '$' + Math.round(Number(v)).toLocaleString('en-US');
+const COND = { new: 'New', used: 'Used', parts: 'For parts' };
+const store = {
+  get: (k, d) => { try { const v = localStorage.getItem('pricer.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set: (k, v) => { try { localStorage.setItem('pricer.' + k, JSON.stringify(v)); } catch (e) {} }
+};
+
+const S = {
+  user: null, ready: false, tab: 'one',
+  q: '', cond: store.get('cond', 'used'), busy: false, res: null, err: '',
+  calc: Object.assign({ paid: '', ship: '10', fee: '13.25', goal: '20' }, store.get('calc', {})),
+  hist: store.get('hist', []),
+  batch: { text: '', cond: 'used', rows: [], busy: false, done: 0 },
+  login: { email: '', pw: '', busy: false, err: '' }
+};
+
+let fb;
+async function boot() {
+  const [app, au, fu] = await Promise.all(['firebase-app', 'firebase-auth', 'firebase-functions'].map(m => import(SDK + m + '.js')));
+  const fapp = app.initializeApp(FIREBASE);
+  const auth = au.getAuth(fapp);
+  const functions = fu.getFunctions(fapp, REGION);
+  fb = {
+    signIn: (e, p) => au.signInWithEmailAndPassword(auth, e, p),
+    signOut: () => au.signOut(auth),
+    lookup: async (query, condition) => (await fu.httpsCallable(functions, 'ebayMarketLookup', { timeout: 70000 })({ query, condition })).data
+  };
+  au.onAuthStateChanged(auth, u => { S.user = u; S.ready = true; render(); });
+}
+
+// ---------- money maths ----------
+// Prices are what the buyer pays in total (item + shipping). eBay's fee is taken from that total,
+// and the buyer's shipping money pays for your label.
+const num = v => { const x = parseFloat(String(v).replace(/[$,]/g, '')); return isFinite(x) ? x : 0; };
+function keep(price) { const c = S.calc; return price * (1 - num(c.fee) / 100) - num(c.ship); }
+
+// ---------- views ----------
+function render() {
+  const app = $('#app');
+  const focus = document.activeElement && document.activeElement.id; const pos = focus && document.activeElement.selectionStart;
+  if (!S.ready) { app.innerHTML = '<div class="mut">Loading…</div>'; return; }
+  app.innerHTML = S.user ? mainView() : loginView();
+  if (focus) { const el = document.getElementById(focus); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch (e) {} } }
+}
+
+function loginView() {
+  const L = S.login;
+  return `<header><div><div class="sm mut2">Live eBay prices, plain answers</div><h1>Vault Pricer</h1></div></header>
+  <form class="card" style="max-width:420px" data-form="login">
+    <h2>Sign in with your Vault account</h2>
+    <span class="sm mut">Same email and password you use for the Vault. Prices come from the Vault's eBay connection.</span>
+    <input class="in" id="lg-e" type="email" autocomplete="username" placeholder="Email" value="${esc(L.email)}" data-bind="login.email" required>
+    <input class="in" id="lg-p" type="password" autocomplete="current-password" placeholder="Password" value="${esc(L.pw)}" data-bind="login.pw" required>
+    ${L.err ? `<div class="notice err">${esc(L.err)}</div>` : ''}
+    <button class="btn pri" ${L.busy ? 'disabled' : ''}>${L.busy ? 'Signing in…' : 'Sign in'}</button>
+  </form>`;
+}
+
+function mainView() {
+  return `<header><div><div class="sm mut2">Live eBay prices, plain answers</div><h1>Vault Pricer</h1></div>
+    <div class="row"><div class="tabs seg"><button class="${S.tab === 'one' ? 'on' : ''}" data-act="tab" data-v="one">One item</button><button class="${S.tab === 'batch' ? 'on' : ''}" data-act="tab" data-v="batch">A list of items</button></div>
+    <span class="sm mut2">${esc(S.user.email)}</span><button class="btn s" data-act="signOut">Sign out</button></div></header>
+  <div class="layout"><div style="display:flex;flex-direction:column;gap:20px;min-width:0">${S.tab === 'one' ? oneView() : batchView()}</div>
+  <aside class="side">${calcView()}${S.tab === 'one' ? histView() : ''}</aside></div>`;
+}
+
+const condSeg = (cur, act) => `<div class="seg">${Object.entries({ new: 'New', used: 'Used', parts: 'Parts' }).map(([k, l]) => `<button type="button" class="${cur === k ? 'on' : ''}" data-act="${act}" data-v="${k}">${l}</button>`).join('')}</div>`;
+
+function oneView() {
+  return `<section class="card">
+    <h2>What can I sell it for?</h2>
+    <form class="row" data-form="lookup">
+      <input class="in" id="q" style="flex:1 1 320px" type="search" placeholder="Model or part number, e.g. ST2000NM0033 · RTX 3080 · MacBook Pro M1 16GB" value="${esc(S.q)}" data-bind="q" autofocus>
+      ${condSeg(S.cond, 'cond')}
+      <button type="submit" class="btn pri" ${S.busy ? 'disabled' : ''}>${S.busy ? '<span class="spin"></span>Checking eBay…' : 'Look up'}</button>
+    </form>
+    ${S.err ? `<div class="notice err">${esc(S.err)}</div>` : ''}
+    ${S.res ? resultView(S.res) : `<span class="sm mut2">Type a model or part number and pick its condition. You'll get what it should sell for, the price to sell it fast, and what you'd keep.</span>`}
+  </section>`;
+}
+
+const soldUrl = r => `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(r.query)}&LH_Sold=1&LH_Complete=1&LH_ItemCondition=${r.condition === 'parts' ? '7000' : r.condition === 'new' ? '1000' : '3000'}`;
+
+function resultView(r) {
+  const st = r.stats || {};
+  if (!st.n) return `<div class="notice">Nobody on eBay is selling “${esc(r.query)}” as <b>${COND[r.condition].toLowerCase()}</b> right now. Try fewer words, the part number, or a different condition. <a href="${soldUrl(r)}" target="_blank" rel="noopener">See what actually sold ↗</a></div>`;
+  const fast = st.p25, fair = st.median, two = Math.round(fair) > Math.round(fast);
+  const tile = (label, v, sub, color, main) => `<div class="tile ${main ? 'main' : ''}"><span class="sm" style="font-weight:600;color:${color || 'var(--tx)'}">${label}</span><span class="v" style="color:${color || 'var(--tx)'}">${money0(v)}</span><span class="sm mut2">${sub}</span></div>`;
+  const row = l => `<a href="${esc(l.url)}" target="_blank" rel="noopener"><span class="sm">${esc(l.title)}${l.lot > 1 ? ` <span class="mut2">· lot of ${l.lot}</span>` : ''}</span><span class="mono sm" style="flex:none">${money(l.price)}${l.lot > 1 ? '<span class="mut2"> each</span>' : ''} ↗</span></a>`;
+  return `<div class="row" style="justify-content:space-between;align-items:flex-end">
+      <div style="display:flex;flex-direction:column;gap:4px"><span class="sm mut2">${esc(r.query)} · ${COND[r.condition]}${r.category ? ' · ' + esc(r.category.name) : ''}</span>
+        <span style="font-size:24px;font-weight:700">Should sell for about <span class="mono" style="color:var(--grn)">${money0(fast)}</span>${two ? ` – <span class="mono" style="color:var(--blu)">${money0(fair)}</span>` : ''}</span>
+        <span class="sm mut">Price it at <b>${money0(fast)}</b> to sell quickly${two ? `, or <b>${money0(fair)}</b> if you can wait` : ''}.</span></div>
+      <a class="btn s" href="${soldUrl(r)}" target="_blank" rel="noopener">See what actually sold ↗</a></div>
+    <div class="tiles">
+      ${tile('Quick sale', fast, 'Cheaper than most sellers, so it should go first.', 'var(--grn)', true)}
+      ${tile('Fair price', fair, 'What most sellers are asking. Sells, but slower.', 'var(--blu)')}
+      ${tile('Top price', st.p75, 'Only if yours is in great shape — expect a long wait.')}
+      ${tile('Cheapest one listed', st.low, 'Usually a worse one: damaged, missing parts, or a rush sale.')}</div>
+    <div class="row" style="align-items:stretch">
+      <div class="lst" style="flex:1 1 300px;min-width:0"><div class="sm mut2">Cheapest ones for sale now — your real competition</div>${(r.cheapest || []).map(row).join('')}</div>
+      <div class="lst" style="flex:1 1 300px;min-width:0"><div class="sm mut2">What most sellers are asking</div>${(r.typical || []).map(row).join('')}</div></div>
+    <span class="sm mut2">Based on ${st.n} similar ${COND[r.condition].toLowerCase()} listings on eBay${r.junk ? `, ignoring ${r.junk} that weren't the same thing` : ''}, checked ${new Date(r.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. These are <b>asking prices</b> with shipping included, so things often sell for a bit less — check <b>See what actually sold</b>.</span>`;
+}
+
+function calcView() {
+  const c = S.calc; const st = S.tab === 'one' && S.res && S.res.stats && S.res.stats.n ? S.res.stats : null;
+  const paid = num(c.paid);
+  const f = (k, label, ph) => `<label class="f"><span class="sm mut2">${label}</span><input class="in mono" id="c-${k}" inputmode="decimal" value="${esc(c[k])}" placeholder="${ph}" data-bind="calc.${k}"></label>`;
+  const line = (label, v, color) => `<div class="kv"><span class="sm mut">${label}</span><span class="mono" style="color:${color || 'var(--tx)'}">${v}</span></div>`;
+  const profitColor = v => v >= 0 ? 'var(--grn)' : 'var(--red)';
+  let body = `<span class="sm mut2">${S.tab === 'one' ? 'Look up an item to see what you’d keep.' : 'These settings are used for the “You keep” and “Pay at most” columns.'}</span>`;
+  if (st) {
+    const kFast = keep(st.p25), kFair = keep(st.median);
+    body = `<div>${line('Sell fast at ' + money0(st.p25) + ', you keep', money(kFast))}${line('Sell at fair price ' + money0(st.median) + ', you keep', money(kFair))}
+      ${paid ? line('Profit if it sells fast', money(kFast - paid), profitColor(kFast - paid)) + line('Profit at fair price', money(kFair - paid), profitColor(kFair - paid)) : ''}
+      ${line(`Pay at most (to make ${money0(num(c.goal))})`, kFast - num(c.goal) > 0 ? money0(kFast - num(c.goal)) : 'Skip it — no room', 'var(--yel)')}</div>
+      <span class="sm mut2">“You keep” = sale price − eBay’s ${num(c.fee)}% fee − your shipping label. “Pay at most” uses the quick-sale price so you still profit if you price it to move.</span>`;
+  }
+  return `<section class="card"><h2>What would I make?</h2>
+    <div class="row" style="align-items:flex-end">${S.tab === 'one' ? f('paid', 'You paid / would pay', '0') : ''}${f('goal', 'Profit you want', '20')}</div>
+    <div class="row" style="align-items:flex-end">${f('ship', 'Your shipping label', '10')}${f('fee', 'eBay fee %', '13.25')}</div>
+    ${body}</section>`;
+}
+
+function histView() {
+  if (!S.hist.length) return '';
+  return `<section class="card"><div class="row" style="justify-content:space-between"><h2>Recent lookups</h2><button class="btn s" data-act="clearHist">Clear</button></div>
+    <div class="hist">${S.hist.map((h, i) => `<button data-act="hist" data-i="${i}"><span class="sm">${esc(h.query)} <span class="mut2">· ${COND[h.condition]}</span></span><span class="mono sm mut">${h.stats && h.stats.n ? money0(h.stats.p25) + '–' + money0(h.stats.median) : 'none'}</span></button>`).join('')}</div></section>`;
+}
+
+function batchView() {
+  const B = S.batch; const lines = parseLines(B.text);
+  const rows = B.rows;
+  const table = !rows.length ? '' : `<div style="overflow-x:auto"><table><thead><tr><th>Item</th><th class="n">Quick sale</th><th class="n">Fair price</th><th class="n">You keep (quick)</th><th class="n">Pay at most</th><th class="n">Listings</th></tr></thead><tbody>
+    ${rows.map(r => { const st = r.res && r.res.stats; const ok = st && st.n; const k = ok ? keep(st.p25) : null;
+      return `<tr><td>${esc(r.query)}${r.err ? `<div class="sm" style="color:var(--red)">${esc(r.err)}</div>` : ''}${r.res && !ok ? '<div class="sm mut2">none for sale</div>' : ''}${r.res && ok ? ` <a class="sm" href="${soldUrl(r.res)}" target="_blank" rel="noopener">sold ↗</a>` : ''}</td>
+        <td class="n" style="color:var(--grn)">${r.state === 'wait' ? '<span class="mut2">…</span>' : ok ? money0(st.p25) : '—'}</td><td class="n" style="color:var(--blu)">${ok ? money0(st.median) : '—'}</td>
+        <td class="n">${ok ? money(k) : '—'}</td><td class="n" style="color:var(--yel)">${ok ? (k - num(S.calc.goal) > 0 ? money0(k - num(S.calc.goal)) : 'skip') : '—'}</td><td class="n mut">${ok ? st.n : '—'}</td></tr>`; }).join('')}
+    </tbody></table></div>`;
+  return `<section class="card"><h2>Price a whole list</h2>
+    <span class="sm mut">One item per line — model or part number. Great for a lot you're thinking of buying.</span>
+    <textarea class="in" id="bt" placeholder="ST2000NM0033&#10;RTX 3080 Founders Edition&#10;MacBook Air M1 8GB 256GB" data-bind="batch.text">${esc(B.text)}</textarea>
+    <div class="row">${condSeg(B.cond, 'bcond')}<button class="btn pri" data-act="runBatch" ${B.busy || !lines.length ? 'disabled' : ''}>${B.busy ? `<span class="spin"></span>Checking ${B.done}/${rows.length}…` : `Price ${lines.length || ''} item${lines.length === 1 ? '' : 's'}`}</button>
+      ${rows.length && !B.busy ? '<button class="btn" data-act="csv">Download CSV</button>' : ''}</div>
+    ${table}
+    ${rows.length ? '<span class="sm mut2">Quick sale and fair price are asking prices on eBay right now, shipping included. “Pay at most” is what you can spend on each and still make the profit you set on the right.</span>' : ''}
+  </section>`;
+}
+
+const parseLines = t => [...new Set(String(t || '').split(/\r?\n/).map(s => s.replace(/\s+/g, ' ').trim()).filter(s => s.length >= 3))].slice(0, 50);
+
+// ---------- actions ----------
+const friendly = e => {
+  const m = (e && e.message) || String(e || '');
+  if (/not-found|internal/i.test((e && e.code) || '') && /not.found|NOT_FOUND/i.test(m)) return 'The Vault backend doesn’t have the price lookup yet — deploy the functions first.';
+  if (/permission-denied|vault access/i.test(m)) return 'This account doesn’t have Vault access.';
+  if (/network|Failed to fetch/i.test(m)) return 'Couldn’t reach the Vault backend. Check your connection.';
+  return m || 'Something went wrong.';
+};
+
+async function doLookup(query, condition) {
+  S.q = query; S.cond = condition; store.set('cond', condition);
+  S.busy = true; S.err = ''; render();
+  try {
+    S.res = await fb.lookup(query, condition);
+    S.hist = [S.res, ...S.hist.filter(h => !(h.query.toLowerCase() === query.toLowerCase() && h.condition === condition))].slice(0, 12);
+    store.set('hist', S.hist);
+  } catch (e) { S.err = friendly(e); }
+  finally { S.busy = false; render(); }
+}
+
+async function runBatch() {
+  const B = S.batch; const lines = parseLines(B.text); if (!lines.length || B.busy) return;
+  B.busy = true; B.done = 0; B.rows = lines.map(q => ({ query: q, state: 'wait' })); render();
+  let next = 0;
+  const worker = async () => { while (next < B.rows.length) { const r = B.rows[next++];
+    try { r.res = await fb.lookup(r.query, B.cond); } catch (e) { r.err = friendly(e); }
+    r.state = 'done'; B.done++; render(); } };
+  await Promise.all([worker(), worker()]);
+  B.busy = false; render();
+}
+
+function csv() {
+  const head = ['Item', 'Condition', 'Quick sale', 'Fair price', 'Top price', 'Cheapest listed', 'You keep (quick sale)', 'Pay at most', 'Listings counted', 'eBay category'];
+  const q = v => /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
+  const r2 = v => v == null ? '' : Number(v).toFixed(2);
+  const lines = S.batch.rows.map(r => { const st = (r.res && r.res.stats) || {}; const ok = st.n; const k = ok ? keep(st.p25) : null;
+    return [r.query, COND[S.batch.cond], ok ? r2(st.p25) : '', ok ? r2(st.median) : '', ok ? r2(st.p75) : '', ok ? r2(st.low) : '', ok ? r2(k) : '', ok ? r2(Math.max(0, k - num(S.calc.goal))) : '', st.n || 0, (r.res && r.res.category && r.res.category.name) || ''].map(q).join(','); });
+  const blob = new Blob([[head.join(','), ...lines].join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `prices-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+const ACT = {
+  tab: el => { S.tab = el.dataset.v; render(); },
+  cond: el => { S.cond = el.dataset.v; store.set('cond', S.cond); if (S.res && S.q.trim().length >= 3) doLookup(S.q.trim(), S.cond); else render(); },
+  bcond: el => { S.batch.cond = el.dataset.v; render(); },
+  hist: el => { const h = S.hist[+el.dataset.i]; if (!h) return; S.res = h; S.q = h.query; S.cond = h.condition; S.err = ''; render(); },
+  clearHist: () => { S.hist = []; store.set('hist', []); render(); },
+  runBatch, csv,
+  signOut: () => { S.res = null; S.batch.rows = []; fb.signOut(); }
+};
+
+document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (!el) return; e.preventDefault(); ACT[el.dataset.act] && ACT[el.dataset.act](el); });
+document.addEventListener('input', e => {
+  const el = e.target; const path = el.dataset && el.dataset.bind; if (!path) return;
+  const keys = path.split('.'); let o = S; keys.slice(0, -1).forEach(k => { o = o[k]; }); o[keys[keys.length - 1]] = el.value;
+  if (path.startsWith('calc.')) { store.set('calc', S.calc); render(); }
+  if (path === 'batch.text') { const btn = document.querySelector('[data-act="runBatch"]'); const n = parseLines(el.value).length; if (btn && !S.batch.busy) { btn.disabled = !n; btn.textContent = `Price ${n || ''} item${n === 1 ? '' : 's'}`; } }
+});
+document.addEventListener('submit', async e => {
+  e.preventDefault(); const form = e.target.dataset.form;
+  if (form === 'lookup') { const q = S.q.replace(/\s+/g, ' ').trim(); if (q.length < 3) { S.err = 'Type at least 3 characters — a model or part number works best.'; render(); return; } doLookup(q, S.cond); }
+  if (form === 'login') {
+    const L = S.login; L.busy = true; L.err = ''; render();
+    try { await fb.signIn(L.email.trim(), L.pw); L.pw = ''; }
+    catch (err) { L.err = /invalid|wrong|user-not-found|credential/i.test(err.code || '') ? 'That email or password isn’t right.' : friendly(err); }
+    finally { L.busy = false; render(); }
+  }
+});
+
+boot().catch(e => { $('#app').innerHTML = `<div class="notice err">Couldn’t start: ${esc(e.message)}. If you opened this file directly and it won’t load, open it from the Vault site instead.</div>`; });
+</script>
+</body>
+</html>
