@@ -137,3 +137,9 @@ test('identifying details are read from the title and specs', () => {
   assert.equal(m.detailScore({ mpn: 'HMA84GR7AFR4N-VK' }), 3);
   assert.equal(m.aspectFilter('11211', { storage: '64 GB', storageName: 'Capacity per Module', extra: [{ name: 'Type', value: 'DDR4' }] }), 'categoryId:11211,Capacity per Module:{64 GB},Type:{DDR4}');
 });
+
+test('price lookup can ask for new, used or for-parts listings', () => {
+  assert.match(m.ebayFilter('new', ''), /^conditions:\{NEW\}/);
+  assert.match(m.ebayFilter('used', '56083'), /^conditions:\{USED\},buyingOptions/);
+  assert.match(m.ebayFilter('parts', ''), /^conditionIds:\{7000\}/);
+});

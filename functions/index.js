@@ -901,7 +901,7 @@ async function ebaySearchAll(token, doc) {
   let junk = 0;
   let seen = 0;
   const { exact } = searchParams(doc);
-  for (let page = 0; page < MARKET_MAX_PAGES; page++) {
+  for (let page = 0; page < (doc.maxPages || MARKET_MAX_PAGES); page++) {
     const json = await ebayGet(token, searchParams(doc, { limit: '200', offset: String(page * 200) }).params);
     total = Number(json.total) || 0;
     for (const s of json.itemSummaries || []) {
@@ -1066,6 +1066,28 @@ exports.ebayMarketWatch = onCall({ secrets: EBAY_SECRETS, timeoutSeconds: 120 },
   const snap = await ref.get();
   const result = await collectModel(token, ref, snap.data());
   return { key, ...result };
+}));
+
+// Market → Price lookup: a one-off search for anything (model, part number, "RTX 3080 FE"), nothing saved.
+// Prices are what buyers pay on current eBay listings (item + first shipping option), lots counted per unit.
+exports.ebayMarketLookup = onCall({ secrets: EBAY_SECRETS, timeoutSeconds: 60 }, logged('ebayMarketLookup', async request => {
+  await memberFor(request);
+  const data = request.data || {};
+  const query = String(data.query || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+  if (query.length < 3) throw new HttpsError('invalid-argument', 'Type what you want to price, e.g. "Seagate ST2000NM0033" or "RTX 3080".');
+  const group = ['new', 'used', 'parts'].includes(data.condition) ? data.condition : 'used';
+  const token = await ebayToken();
+  const cat = await suggestCategory(token, query).catch(() => null);
+  const result = await ebaySearchAll(token, { query, title: query, group, category: cat ? cat.id : '', match: {}, mode: 'details', maxPages: 2 });
+  const stats = market.priceStats(result.listings.map(l => l.price));
+  const kept = stats.n ? result.listings.filter(l => l.price >= stats.low && l.price <= stats.high) : [];
+  const byPrice = [...kept].sort((a, b) => a.price - b.price);
+  const nearMedian = stats.median ? [...kept].sort((a, b) => Math.abs(a.price - stats.median) - Math.abs(b.price - stats.median)).slice(0, 6).sort((a, b) => a.price - b.price) : [];
+  return {
+    query, condition: group, at: new Date().toISOString(),
+    category: cat, total: result.total, sampled: result.listings.length, junk: result.junk,
+    stats, cheapest: byPrice.slice(0, 4), typical: nearMedian
+  };
 }));
 
 // Fix how a model is matched on eBay (choose eBay's Model / Storage / Network), or go back to automatic.

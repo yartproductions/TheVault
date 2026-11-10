@@ -49,7 +49,7 @@ function ebayCategory(category, title) {
 
 // Fixed-price only works on leaf categories, so it's left off when eBay picked no category.
 function ebayFilter(group, category) {
-  const cond = group === 'parts' ? 'conditionIds:{7000}' : 'conditions:{USED}';
+  const cond = group === 'parts' ? 'conditionIds:{7000}' : group === 'new' ? 'conditions:{NEW}' : 'conditions:{USED}';
   return `${cond}${category ? ',buyingOptions:{FIXED_PRICE}' : ''},itemLocationCountry:US,priceCurrency:USD`;
 }
 
